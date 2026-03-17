@@ -110,6 +110,25 @@ function toDateOnly(value: string | null | undefined): string {
   return parsed.toISOString().slice(0, 10);
 }
 
+function formatAttendanceDateTime(value?: string | null): string {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "-";
+
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return raw;
+
+  return new Intl.DateTimeFormat("id-ID", {
+    timeZone: "Asia/Jakarta",
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).format(parsed).replace(/\./g, ":") + " WIB";
+}
+
 function toCreatePayload(s: FormState): AttendanceCreate {
   return {
     placeId: s.placeId,
@@ -505,8 +524,20 @@ export default function AttendancesPage() {
         className: "w-[110px]",
         render: (r) => (typeof r.late_minutes === "number" ? String(r.late_minutes) : "-"),
       },
-      { key: "check_in_at", header: "Check In", sortable: true, className: "w-[170px]" },
-      { key: "check_out_at", header: "Check Out", sortable: true, className: "w-[170px]" },
+      {
+        key: "check_in_at",
+        header: "Check In",
+        sortable: true,
+        className: "w-[170px]",
+        render: (r) => formatAttendanceDateTime(r.check_in_at),
+      },
+      {
+        key: "check_out_at",
+        header: "Check Out",
+        sortable: true,
+        className: "w-[170px]",
+        render: (r) => formatAttendanceDateTime(r.check_out_at),
+      },
       {
         key: "check_in_photo_url",
         header: "Check In Photo",
