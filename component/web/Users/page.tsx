@@ -14,6 +14,8 @@ import { userHooks } from "@/repository/Users";
 import type { Role } from "@/repository/Roles";
 import { roleHooks } from "@/repository/Roles";
 
+const GLOBAL_ROLE_CODES = new Set(["SUPER_ADMIN", "SUPER_USER", "ADMIN"]);
+
 type FormState = {
   roleId: string;
   fullName: string;
@@ -50,6 +52,23 @@ function toPatchPayload(state: FormState, includePassword: boolean): UserPatch {
   };
 }
 
+function readCurrentRoleCode(): string {
+  if (typeof window === "undefined") return "";
+
+  const read = (storage: Storage): string => {
+    const raw = storage.getItem("authUser");
+    if (!raw) return "";
+    try {
+      const parsed = JSON.parse(raw) as { role?: unknown };
+      return typeof parsed.role === "string" ? parsed.role.trim().toUpperCase() : "";
+    } catch {
+      return "";
+    }
+  };
+
+  return read(window.localStorage) || read(window.sessionStorage);
+}
+
 export default function UsersPage() {
   const [tableState, setTableState] = React.useState<{
     page: number;
@@ -74,9 +93,23 @@ export default function UsersPage() {
   const removeMut = userHooks.useRemove();
 
   const roleList = roleHooks.useList({});
+  const [currentRoleCode, setCurrentRoleCode] = React.useState<string>(() => readCurrentRoleCode());
+
+  React.useEffect(() => {
+    setCurrentRoleCode(readCurrentRoleCode());
+  }, []);
 
   const roles = React.useMemo(() => (roleList.data ?? []) as Role[], [roleList.data]);
-  const createRoles = React.useMemo(() => roles.filter((r) => r.code !== "SUPER_ADMIN"), [roles]);
+  const createRoles = React.useMemo(() => {
+    if (currentRoleCode === "PLACE_ADMIN") {
+      return roles.filter((r) => !GLOBAL_ROLE_CODES.has(String(r.code ?? "").toUpperCase()));
+    }
+    return roles.filter((r) => String(r.code ?? "").toUpperCase() !== "SUPER_ADMIN");
+  }, [currentRoleCode, roles]);
+  const editableRoles = React.useMemo(() => {
+    if (currentRoleCode === "PLACE_ADMIN") return createRoles;
+    return roles;
+  }, [createRoles, currentRoleCode, roles]);
   const rows = React.useMemo(() => (list.data ?? []) as User[], [list.data]);
   const listMeta = React.useMemo(() => readListMeta(list.data), [list.data]);
   const pagination = React.useMemo(
@@ -271,7 +304,7 @@ export default function UsersPage() {
                 <option value="" disabled>
                   Pilih role
                 </option>
-                {(mode === "create" ? createRoles : roles).map((r) => (
+                {(mode === "create" ? createRoles : editableRoles).map((r) => (
                   <option key={r.id} value={r.id}>
                     {r.name} ({r.code})
                   </option>
