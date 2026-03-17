@@ -25,7 +25,7 @@ import {
 } from "lucide-react";
 
 import Button from "@/component/ui/Button";
-import SidebarMenu, { type MenuItem } from "@/component/ui/SidebarMenu";
+import SidebarMenu, { type MenuItem, type MenuLeafItem } from "@/component/ui/SidebarMenu";
 
 type AdminMenuKey =
   | "dashboard"
@@ -69,6 +69,17 @@ const ROUTE_BY_KEY: Record<AdminMenuKey, string> = {
 };
 
 const PETUGAS_ROLE_CODES = new Set(["GUARD"]);
+const SUPER_ADMIN_ROLE_CODES = new Set(["SUPER_ADMIN", "SUPER_USER"]);
+const GLOBAL_ADMIN_ROLE_CODES = new Set(["SUPER_ADMIN", "SUPER_USER", "ADMIN"]);
+const PLACE_ADMIN_ROLE_CODES = new Set(["PLACE_ADMIN"]);
+
+type AuthStorageUser = {
+  fullName?: string;
+  name?: string;
+  username?: string;
+  email?: string;
+  role?: string;
+};
 
 function normalizePath(input: string) {
   const raw = String(input ?? "").trim();
@@ -107,6 +118,23 @@ function readRoleFromAuthStorage(): string {
   return read(window.localStorage) || read(window.sessionStorage);
 }
 
+function readAuthUserFromStorage(): AuthStorageUser | null {
+  if (typeof window === "undefined") return null;
+
+  const read = (storage: Storage): AuthStorageUser | null => {
+    const raw = storage.getItem("authUser");
+    if (!raw) return null;
+    try {
+      const parsed = JSON.parse(raw) as AuthStorageUser;
+      return parsed && typeof parsed === "object" ? parsed : null;
+    } catch {
+      return null;
+    }
+  };
+
+  return read(window.localStorage) || read(window.sessionStorage);
+}
+
 function clearCookie(name: string) {
   const safe = encodeURIComponent(name);
   document.cookie = `${safe}=; Path=/; Max-Age=0`;
@@ -132,10 +160,15 @@ export default function AdminSidebar({
   const router = useRouter();
   const activeKey = React.useMemo(() => activeKeyFromPath(pathname), [pathname]);
   const [roleCode, setRoleCode] = React.useState<string>(() => readRoleFromAuthStorage());
+  const [authUser, setAuthUser] = React.useState<AuthStorageUser | null>(() => readAuthUserFromStorage());
   const isPetugas = PETUGAS_ROLE_CODES.has(roleCode);
+  const isSuperAdmin = SUPER_ADMIN_ROLE_CODES.has(roleCode);
+  const isGlobalAdmin = GLOBAL_ADMIN_ROLE_CODES.has(roleCode);
+  const isPlaceAdmin = PLACE_ADMIN_ROLE_CODES.has(roleCode);
 
   React.useEffect(() => {
     setRoleCode(readRoleFromAuthStorage());
+    setAuthUser(readAuthUserFromStorage());
   }, [pathname]);
 
   const onLogout = React.useCallback(() => {
@@ -153,69 +186,92 @@ export default function AdminSidebar({
   }, [loginPath, router]);
 
   const items = React.useMemo<readonly MenuItem<AdminMenuKey>[]>(
-    () =>
-      (isPetugas
-        ? [
-            {
-              label: "Operasional",
-              icon: <ClipboardCheck className="h-4 w-4" />,
-              children: [
-                { key: "attendance", label: "Attendance", icon: <ClipboardCheck className="h-4 w-4" /> },
-                { key: "patrol-scans", label: "Patrol Scans", icon: <ScanLine className="h-4 w-4" /> },
-              ],
-            },
-            {
-              label: "Facility",
-              icon: <Wrench className="h-4 w-4" />,
-              children: [{ key: "facility-scans", label: "Facility Scans", icon: <ScanLine className="h-4 w-4" /> }],
-            },
-          ]
-        : [
-            {
-              label: "Main",
-              icon: <LayoutGrid className="h-4 w-4" />,
-              children: [{ key: "dashboard", label: "Dashboard", icon: <LayoutGrid className="h-4 w-4" /> }],
-            },
-            {
-              label: "Operasional",
-              icon: <ClipboardCheck className="h-4 w-4" />,
-              children: [
-                { key: "attendance", label: "Attendance", icon: <ClipboardCheck className="h-4 w-4" /> },
-                { key: "attendance-config", label: "Attendance Config", icon: <Settings className="h-4 w-4" /> },
-                { key: "leave-requests", label: "Leave Requests", icon: <ClipboardSignature className="h-4 w-4" /> },
-                { key: "patrol", label: "Patrol", icon: <QrCode className="h-4 w-4" /> },
-                { key: "patrol-routes", label: "Patrol Routes", icon: <MapPinned className="h-4 w-4" /> },
-                { key: "patrol-route-points", label: "Route Points", icon: <Route className="h-4 w-4" /> },
-                { key: "patrol-scans", label: "Patrol Scans", icon: <ScanLine className="h-4 w-4" /> },
-              ],
-            },
-            {
-              label: "Facility",
-              icon: <Wrench className="h-4 w-4" />,
-              children: [
-                { key: "facility-spots", label: "Facility Spots", icon: <MapPinned className="h-4 w-4" /> },
-                { key: "facility-items", label: "Facility Items", icon: <FileCheck2 className="h-4 w-4" /> },
-                { key: "facility-scans", label: "Facility Scans", icon: <ScanLine className="h-4 w-4" /> },
-              ],
-            },
-            {
-              label: "Master",
-              icon: <Users className="h-4 w-4" />,
-              children: [
-                { key: "shifts", label: "Shifts", icon: <CalendarClock className="h-4 w-4" /> },
-                { key: "users", label: "Users", icon: <Users className="h-4 w-4" /> },
-                { key: "roles", label: "Roles", icon: <Shield className="h-4 w-4" /> },
-                { key: "places", label: "Places", icon: <Building2 className="h-4 w-4" /> },
-                { key: "spots", label: "Spots", icon: <MapPinned className="h-4 w-4" /> },
-                { key: "spot-assignments", label: "Spot Assignments", icon: <ClipboardList className="h-4 w-4" /> },
-                { key: "place-admins", label: "Place Admins", icon: <UserCheck className="h-4 w-4" /> },
-              ],
-            },
-          ]) as readonly MenuItem<AdminMenuKey>[],
-    [isPetugas],
+    () => {
+      if (isPetugas) {
+        return [
+          {
+            label: "Operasional",
+            icon: <ClipboardCheck className="h-4 w-4" />,
+            children: [
+              { key: "attendance", label: "Attendance", icon: <ClipboardCheck className="h-4 w-4" /> },
+              { key: "patrol-scans", label: "Patrol Scans", icon: <ScanLine className="h-4 w-4" /> },
+            ],
+          },
+          {
+            label: "Facility",
+            icon: <Wrench className="h-4 w-4" />,
+            children: [{ key: "facility-scans", label: "Facility Scans", icon: <ScanLine className="h-4 w-4" /> }],
+          },
+        ] as const satisfies readonly MenuItem<AdminMenuKey>[];
+      }
+
+      const masterChildren: MenuLeafItem<AdminMenuKey>[] = [
+        { key: "shifts", label: "Shifts", icon: <CalendarClock className="h-4 w-4" /> },
+        { key: "users", label: "Users", icon: <Users className="h-4 w-4" /> },
+        { key: "spots", label: "Spots", icon: <MapPinned className="h-4 w-4" /> },
+        { key: "spot-assignments", label: "Spot Assignments", icon: <ClipboardList className="h-4 w-4" /> },
+      ];
+
+      if (isGlobalAdmin) {
+        masterChildren.splice(2, 0,
+          { key: "roles", label: "Roles", icon: <Shield className="h-4 w-4" /> },
+          { key: "places", label: "Places", icon: <Building2 className="h-4 w-4" /> },
+        );
+      }
+
+      if (isSuperAdmin) {
+        masterChildren.push({ key: "place-admins", label: "Place Admins", icon: <UserCheck className="h-4 w-4" /> });
+      }
+
+      const operationalChildren: MenuLeafItem<AdminMenuKey>[] = [
+        { key: "attendance", label: "Attendance", icon: <ClipboardCheck className="h-4 w-4" /> },
+        { key: "leave-requests", label: "Leave Requests", icon: <ClipboardSignature className="h-4 w-4" /> },
+        { key: "patrol", label: "Patrol", icon: <QrCode className="h-4 w-4" /> },
+        { key: "patrol-routes", label: "Patrol Routes", icon: <MapPinned className="h-4 w-4" /> },
+        { key: "patrol-route-points", label: "Route Points", icon: <Route className="h-4 w-4" /> },
+        { key: "patrol-scans", label: "Patrol Scans", icon: <ScanLine className="h-4 w-4" /> },
+      ];
+      if (isGlobalAdmin || isPlaceAdmin) {
+        operationalChildren.splice(1, 0, { key: "attendance-config", label: "Attendance Config", icon: <Settings className="h-4 w-4" /> });
+      }
+
+      return [
+        {
+          label: "Main",
+          icon: <LayoutGrid className="h-4 w-4" />,
+          children: [{ key: "dashboard", label: "Dashboard", icon: <LayoutGrid className="h-4 w-4" /> }],
+        },
+        {
+          label: "Operasional",
+          icon: <ClipboardCheck className="h-4 w-4" />,
+          children: operationalChildren,
+        },
+        {
+          label: "Facility",
+          icon: <Wrench className="h-4 w-4" />,
+          children: [
+            { key: "facility-spots", label: "Facility Spots", icon: <MapPinned className="h-4 w-4" /> },
+            { key: "facility-items", label: "Facility Items", icon: <FileCheck2 className="h-4 w-4" /> },
+            { key: "facility-scans", label: "Facility Scans", icon: <ScanLine className="h-4 w-4" /> },
+          ],
+        },
+        {
+          label: "Master",
+          icon: <Users className="h-4 w-4" />,
+          children: masterChildren,
+        },
+      ] as const satisfies readonly MenuItem<AdminMenuKey>[];
+    },
+    [isGlobalAdmin, isPetugas, isPlaceAdmin, isSuperAdmin],
   );
 
   const roleLabel = roleCode || (isPetugas ? "GUARD" : "SUPER_ADMIN");
+  const resolvedDisplayName = String(
+    authUser?.fullName ?? authUser?.name ?? authUser?.username ?? displayName ?? "Admin",
+  ).trim() || "Admin";
+  const resolvedDisplayEmail = String(
+    authUser?.email ?? authUser?.username ?? displayEmail ?? "",
+  ).trim();
 
   return (
     <div className="h-full px-3 pt-3 sm:px-5 sm:pt-5 md:px-0 md:pt-0">
@@ -249,8 +305,8 @@ export default function AdminSidebar({
 
           <div className="relative mt-5 rounded-[24px] border border-white/10 bg-white/10 p-4 backdrop-blur-md">
             <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-cyan-100">Signed in as</div>
-            <div className="mt-2 text-base font-semibold text-white">{displayName}</div>
-            <div className="mt-1 truncate text-sm text-slate-300">{displayEmail || "admin@satpam.local"}</div>
+            <div className="mt-2 text-base font-semibold text-white">{resolvedDisplayName}</div>
+            <div className="mt-1 truncate text-sm text-slate-300">{resolvedDisplayEmail || "admin@satpam.local"}</div>
             <div className="mt-3 inline-flex rounded-full bg-white/12 px-3 py-1 text-[11px] font-semibold tracking-[0.16em] text-amber-100">
               {roleLabel}
             </div>

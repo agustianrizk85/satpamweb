@@ -22,6 +22,8 @@ export type UserCreate = {
   username: string;
   password: string;
   status?: UserStatus;
+  placeId?: string;
+  placeRoleId?: string;
 };
 
 export type UserPatch = {
