@@ -106,6 +106,25 @@ function toDateOnly(value: string | null | undefined): string {
   return parsed.toISOString().slice(0, 10);
 }
 
+function formatPatrolScanDateTime(value: string | null | undefined): string {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "-";
+
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return raw;
+
+  return new Intl.DateTimeFormat("id-ID", {
+    timeZone: "Asia/Jakarta",
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).format(parsed).replace(/\./g, ":") + " WIB";
+}
+
 export default function PatrolScansPage() {
   const qc = useQueryClient();
   const authUserFromStorage = React.useMemo(() => readAuthSessionUser(), []);
@@ -407,7 +426,13 @@ export default function PatrolScansPage() {
 
   const columns = React.useMemo<readonly MasterTableColumn<PatrolScan>[]>(() => {
     return [
-      { key: "scanned_at", header: "Scanned At", sortable: true, className: "w-[200px]" },
+      {
+        key: "scanned_at",
+        header: "Scanned At",
+        sortable: true,
+        className: "w-[200px]",
+        render: (r) => formatPatrolScanDateTime(r.scanned_at),
+      },
       { key: "patrol_run_id", header: "Run ID", sortable: true, className: "w-[220px]" },
       { key: "spot_id", header: "Spot", sortable: true, render: (r) => spotLabelById.get(r.spot_id) ?? r.spot_id },
       { key: "user_id", header: "User", sortable: true, render: (r) => userLabelById.get(r.user_id) ?? r.user_id },
