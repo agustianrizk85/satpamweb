@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { auth } from "@/repository";
 import { attendanceHooks, createAttendance, updateAttendance } from "@/repository/attendances";
+import type { Attendance } from "@/repository/attendances";
 import type { SpotAssignment } from "@/repository/spot-assignments";
 import { spotAssignmentHooks, updateSpotAssignment } from "@/repository/spot-assignments";
 import { uploadPhoto } from "@/repository/uploads";
@@ -65,17 +66,34 @@ export default function MobileAttendanceCameraPage() {
     [assignmentRows, me?.id],
   );
 
+  const attendanceRows = React.useMemo(() => (attendanceQuery.data ?? []) as Attendance[], [attendanceQuery.data]);
+
   const currentAttendance = React.useMemo(() => {
-    const rows = attendanceQuery.data ?? [];
+    const rows = [...attendanceRows].sort((a, b) => {
+      const ta = new Date(a.created_at).getTime();
+      const tb = new Date(b.created_at).getTime();
+      return tb - ta;
+    });
+
+    if (myActiveAssignment?.id) {
+      const byAssignment = rows.find((row) => row.assignment_id === myActiveAssignment.id);
+      if (byAssignment) return byAssignment;
+    }
+
+    const openRow = rows.find((row) => row.check_in_at && !row.check_out_at);
+    if (openRow) return openRow;
+
     return rows[0] ?? null;
-  }, [attendanceQuery.data]);
+  }, [attendanceRows, myActiveAssignment?.id]);
 
   const actionType = React.useMemo<"NEED_ASSIGNMENT" | "CHECK_IN" | "CHECK_OUT" | "DONE">(() => {
-    if (!myActiveAssignment && !currentAttendance?.check_in_at) return "NEED_ASSIGNMENT";
-    if (!currentAttendance?.check_in_at) return "CHECK_IN";
-    if (!currentAttendance?.check_out_at) return "CHECK_OUT";
-    return "DONE";
-  }, [currentAttendance?.check_in_at, currentAttendance?.check_out_at, myActiveAssignment]);
+    if (currentAttendance?.check_in_at && !currentAttendance?.check_out_at) return "CHECK_OUT";
+    if (myActiveAssignment?.id) {
+      if (currentAttendance?.assignment_id === myActiveAssignment.id && currentAttendance?.check_out_at) return "DONE";
+      return "CHECK_IN";
+    }
+    return "NEED_ASSIGNMENT";
+  }, [currentAttendance?.assignment_id, currentAttendance?.check_in_at, currentAttendance?.check_out_at, myActiveAssignment?.id]);
 
   const stopCamera = React.useCallback(() => {
     if (!streamRef.current) return;
@@ -187,6 +205,8 @@ export default function MobileAttendanceCameraPage() {
         await createAttendance({
           placeId: activePlaceId,
           userId: me.id,
+          assignmentId: myActiveAssignment?.id ?? null,
+          shiftId: myActiveAssignment?.shift_id ?? null,
           attendanceDate: todayKey,
           checkInAt: nowIso,
           status: "PRESENT",
@@ -224,7 +244,7 @@ export default function MobileAttendanceCameraPage() {
     } finally {
       setIsSubmitting(false);
     }
-  }, [actionType, activePlaceId, assignmentRows, currentAttendance?.id, me?.id, photoUrl, queryClient, router, todayKey]);
+  }, [actionType, activePlaceId, assignmentRows, currentAttendance?.id, me?.id, myActiveAssignment?.id, myActiveAssignment?.shift_id, photoUrl, queryClient, router, todayKey]);
 
   return (
     <div className="min-h-[100svh] bg-slate-950 p-4 text-white">
@@ -260,12 +280,16 @@ export default function MobileAttendanceCameraPage() {
         </div>
 
         <div className="mt-3 grid grid-cols-1 gap-2">
-          {!photoUrl ? (
+          {actionType === "DONE" ? (
+            <div className="rounded-xl border border-emerald-800 bg-emerald-950/60 px-4 py-3 text-center text-[13px] font-black text-emerald-300">
+              Attendance untuk shift aktif ini sudah selesai
+            </div>
+          ) : !photoUrl ? (
             <button
               type="button"
               onClick={() => void capturePhoto()}
-              disabled={actionType === "DONE" || actionType === "NEED_ASSIGNMENT"}
-              className="rounded-xl bg-emerald-600 px-4 py-3 text-[13px] font-black disabled:opacity-60"
+              disabled={actionType === "NEED_ASSIGNMENT"}
+              className="rounded-xl bg-emerald-600 px-4 py-3 text-[13px] font-black disabled:cursor-not-allowed disabled:opacity-60"
             >
               Ambil Foto
             </button>
@@ -280,22 +304,30 @@ export default function MobileAttendanceCameraPage() {
           )}
         </div>
 
-        <button
-          type="button"
-          onClick={() => void submitAttendance()}
-          disabled={isSubmitting || actionType === "DONE" || actionType === "NEED_ASSIGNMENT"}
-          className="mt-3 w-full rounded-xl bg-blue-600 px-4 py-3 text-[13px] font-black disabled:opacity-60"
-        >
-          {isSubmitting
-            ? "Menyimpan..."
-            : actionType === "NEED_ASSIGNMENT"
-              ? "Pilih Shift di Dashboard"
-              : actionType === "CHECK_IN"
-              ? "Submit Check In"
-              : actionType === "CHECK_OUT"
-                ? "Submit Check Out"
-                : "Attendance Selesai"}
-        </button>
+        {actionType === "DONE" ? (
+          <button
+            type="button"
+            onClick={() => router.push("/mobile/dashboard")}
+            className="mt-3 w-full rounded-xl bg-slate-700 px-4 py-3 text-[13px] font-black"
+          >
+            Kembali Pilih Shift
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={() => void submitAttendance()}
+            disabled={isSubmitting || actionType === "NEED_ASSIGNMENT"}
+            className="mt-3 w-full rounded-xl bg-blue-600 px-4 py-3 text-[13px] font-black disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {isSubmitting
+              ? "Menyimpan..."
+              : actionType === "NEED_ASSIGNMENT"
+                ? "Pilih Shift di Dashboard"
+                : actionType === "CHECK_IN"
+                ? "Submit Check In"
+                : "Submit Check Out"}
+          </button>
+        )}
 
         {actionType === "NEED_ASSIGNMENT" ? (
           <button

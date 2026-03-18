@@ -9,6 +9,7 @@ const TOP_TAB_CANDIDATES: readonly TitleBarTab[] = [
   { label: "Dashboard", href: "/web/dashboard", subLabel: "Ringkasan" },
   { label: "Dashboard", href: "/dashboard", subLabel: "Ringkasan" },
   { label: "Attendance", href: "/web/attendance", subLabel: "Check-in/out" },
+  { label: "Visitor Log", href: "/web/visitor-log", subLabel: "Log tamu" },
   { label: "Attendance Config", href: "/web/attendance-config", subLabel: "Konfigurasi" },
   { label: "Leave Requests", href: "/web/leave-requests", subLabel: "Pengajuan" },
   { label: "Patrol", href: "/web/patrol", subLabel: "Scan QR" },

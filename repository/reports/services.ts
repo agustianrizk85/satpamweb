@@ -13,6 +13,10 @@ import type {
   PatrolScanReportListParams,
   PatrolScanReportRow,
   PatrolScanReportSummary,
+  VisitorReportDownloadParams,
+  VisitorReportListParams,
+  VisitorReportRow,
+  VisitorReportSummary,
   ReportDownloadFormat,
   ReportListResponse,
 } from "./model";
@@ -31,6 +35,7 @@ export type ReportDownloadOptions = {
 };
 
 const attendanceReportAgent = createHttpAgent({ basePath: "/api/v1/reports/attendance", auth: true });
+const visitorReportAgent = createHttpAgent({ basePath: "/api/v1/reports/visitors", auth: true });
 const patrolScanReportAgent = createHttpAgent({ basePath: "/api/v1/reports/patrol-scans", auth: true });
 const facilityScanReportAgent = createHttpAgent({ basePath: "/api/v1/reports/facility-scans", auth: true });
 
@@ -188,6 +193,10 @@ export async function listAttendanceReports(params: AttendanceReportListParams):
   return attendanceReportAgent.get<ReportListResponse<AttendanceReportRow, AttendanceReportSummary>>("", { query: params });
 }
 
+export async function listVisitorReports(params: VisitorReportListParams): Promise<ReportListResponse<VisitorReportRow, VisitorReportSummary>> {
+  return visitorReportAgent.get<ReportListResponse<VisitorReportRow, VisitorReportSummary>>("", { query: params });
+}
+
 export async function listPatrolScanReports(params: PatrolScanReportListParams): Promise<ReportListResponse<PatrolScanReportRow, PatrolScanReportSummary>> {
   return patrolScanReportAgent.get<ReportListResponse<PatrolScanReportRow, PatrolScanReportSummary>>("", { query: params });
 }
@@ -206,6 +215,20 @@ export async function downloadAttendanceReportCsv(
     params,
     format,
     format === "pdf" ? "attendance-report.pdf" : "attendance-report.csv",
+    options,
+  );
+}
+
+export async function downloadVisitorReportCsv(
+  params: VisitorReportDownloadParams,
+  format: ReportDownloadFormat = "csv",
+  options?: ReportDownloadOptions,
+): Promise<void> {
+  return downloadReportFile(
+    "/api/v1/reports/visitors/download",
+    params,
+    format,
+    format === "pdf" ? "visitor-log-report.pdf" : "visitor-log-report.csv",
     options,
   );
 }

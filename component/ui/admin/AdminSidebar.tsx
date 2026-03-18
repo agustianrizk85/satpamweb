@@ -30,6 +30,7 @@ import SidebarMenu, { type MenuItem, type MenuLeafItem } from "@/component/ui/Si
 type AdminMenuKey =
   | "dashboard"
   | "attendance"
+  | "visitor-log"
   | "attendance-config"
   | "patrol"
   | "patrol-routes"
@@ -50,6 +51,7 @@ type AdminMenuKey =
 const ROUTE_BY_KEY: Record<AdminMenuKey, string> = {
   dashboard: "/web/dashboard",
   attendance: "/web/attendance",
+  "visitor-log": "/web/visitor-log",
   "attendance-config": "/web/attendance-config",
   patrol: "/web/patrol",
   "patrol-routes": "/web/patrol-routes",
@@ -194,6 +196,7 @@ export default function AdminSidebar({
             icon: <ClipboardCheck className="h-4 w-4" />,
             children: [
               { key: "attendance", label: "Attendance", icon: <ClipboardCheck className="h-4 w-4" /> },
+              { key: "visitor-log", label: "Visitor Log", icon: <ClipboardList className="h-4 w-4" /> },
               { key: "patrol-scans", label: "Patrol Scans", icon: <ScanLine className="h-4 w-4" /> },
             ],
           },
@@ -225,6 +228,7 @@ export default function AdminSidebar({
 
       const operationalChildren: MenuLeafItem<AdminMenuKey>[] = [
         { key: "attendance", label: "Attendance", icon: <ClipboardCheck className="h-4 w-4" /> },
+        { key: "visitor-log", label: "Visitor Log", icon: <ClipboardList className="h-4 w-4" /> },
         { key: "leave-requests", label: "Leave Requests", icon: <ClipboardSignature className="h-4 w-4" /> },
         { key: "patrol", label: "Patrol", icon: <QrCode className="h-4 w-4" /> },
         { key: "patrol-routes", label: "Patrol Routes", icon: <MapPinned className="h-4 w-4" /> },

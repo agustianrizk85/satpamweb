@@ -201,7 +201,7 @@ export default function AttendancesPage() {
   }>({
     page: 1,
     pageSize: 10,
-    sortKey: "attendance_date",
+    sortKey: "check_in_at",
     sortDirection: "desc",
   });
   const effectiveFilterUserId = (isGuard ? ownUserId : filterUserId).trim();

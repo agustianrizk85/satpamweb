@@ -82,6 +82,26 @@ export type FacilityScanReportSummary = {
   unique_users: number;
 };
 
+export type VisitorReportRow = {
+  id: string;
+  place_id: string;
+  place_name: string;
+  user_id: string;
+  full_name: string;
+  nik: string;
+  nama: string;
+  tujuan: string | null;
+  catatan: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type VisitorReportSummary = {
+  total_data: number;
+  unique_places: number;
+  unique_users: number;
+};
+
 export type ReportListPagination = {
   page: number;
   pageSize: number;
@@ -140,8 +160,20 @@ export type FacilityScanReportListParams = {
   sortOrder?: "asc" | "desc";
 };
 
+export type VisitorReportListParams = {
+  placeId?: string;
+  userId?: string;
+  fromDate?: string;
+  toDate?: string;
+  page?: number;
+  pageSize?: number;
+  sortBy?: "createdAt" | "updatedAt" | "userName" | "placeName" | "nik" | "nama";
+  sortOrder?: "asc" | "desc";
+};
+
 export type AttendanceReportDownloadParams = Omit<AttendanceReportListParams, "page" | "pageSize" | "sortBy" | "sortOrder">;
 export type PatrolScanReportDownloadParams = Omit<PatrolScanReportListParams, "page" | "pageSize" | "sortBy" | "sortOrder">;
 export type FacilityScanReportDownloadParams = Omit<FacilityScanReportListParams, "page" | "pageSize" | "sortBy" | "sortOrder">;
+export type VisitorReportDownloadParams = Omit<VisitorReportListParams, "page" | "pageSize" | "sortBy" | "sortOrder">;
 
 export type ReportDownloadFormat = "csv" | "pdf";
