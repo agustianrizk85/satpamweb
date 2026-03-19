@@ -3,13 +3,16 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { auth } from "@/repository";
 import type { Spot } from "@/repository/Spots";
 import { spotHooks } from "@/repository/Spots";
 import type { SpotAssignment } from "@/repository/spot-assignments";
 import { spotAssignmentHooks } from "@/repository/spot-assignments";
-import { createPatrolScan } from "@/repository/patrol-scans";
+import { attendanceHooks } from "@/repository/attendances";
+import type { Attendance } from "@/repository/attendances";
+import { createPatrolScan, getPatrolProgress } from "@/repository/patrol-scans";
+import type { PatrolProgress } from "@/repository/patrol-scans";
 import { uploadPhoto } from "@/repository/uploads";
 import { compressImageDataUrl, estimateDataUrlSizeBytes, formatBytesToKB } from "@/libs/image";
 
@@ -87,6 +90,7 @@ function resolveSpotFromPayload(raw: string, spots: Spot[]): Spot | null {
 
 export default function MobilePatrolScanPage() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const videoRef = React.useRef<HTMLVideoElement | null>(null);
   const streamRef = React.useRef<MediaStream | null>(null);
   const detectorRef = React.useRef<BarcodeDetectorLike | null>(null);
@@ -103,6 +107,7 @@ export default function MobilePatrolScanPage() {
   const [resolvedSpot, setResolvedSpot] = React.useState<Spot | null>(null);
   const [scanSupported, setScanSupported] = React.useState(false);
   const [captureFacingMode, setCaptureFacingMode] = React.useState<CaptureFacingMode>("user");
+  const [lastProgressFlash, setLastProgressFlash] = React.useState<string | null>(null);
 
   const meQuery = useQuery({
     queryKey: ["satpam-mobile-me-patrol-camera"],
@@ -111,6 +116,7 @@ export default function MobilePatrolScanPage() {
 
   const me = meQuery.data ?? null;
   const activePlaceId = me?.defaultPlaceId ?? me?.placeAccesses?.[0]?.placeId ?? "";
+  const todayKey = React.useMemo(() => localDateKey(new Date()), []);
 
   const assignmentQuery = spotAssignmentHooks.useList(
     { placeId: activePlaceId || undefined },
@@ -121,6 +127,42 @@ export default function MobilePatrolScanPage() {
     () => assignmentRows.find((row) => row.user_id === me?.id && row.is_active) ?? null,
     [assignmentRows, me?.id],
   );
+
+  const attendanceQuery = attendanceHooks.useList(
+    {
+      placeId: activePlaceId || undefined,
+      userId: me?.id,
+      attendanceDate: todayKey,
+      page: 1,
+      pageSize: 10,
+    },
+    { enabled: Boolean(activePlaceId && me?.id) },
+  );
+  const attendanceRows = React.useMemo(() => (attendanceQuery.data ?? []) as Attendance[], [attendanceQuery.data]);
+  const currentAttendance = React.useMemo(() => {
+    const rows = [...attendanceRows].sort((a, b) => {
+      const ta = new Date(a.created_at).getTime();
+      const tb = new Date(b.created_at).getTime();
+      return tb - ta;
+    });
+
+    if (myActiveAssignment?.id) {
+      const byAssignment = rows.find(
+        (row) => row.assignment_id === myActiveAssignment.id && row.check_in_at && !row.check_out_at,
+      );
+      if (byAssignment) return byAssignment;
+    }
+
+    return rows.find((row) => row.check_in_at && !row.check_out_at) ?? null;
+  }, [attendanceRows, myActiveAssignment?.id]);
+
+  const patrolProgressQuery = useQuery<PatrolProgress, Error>({
+    queryKey: ["satpam-mobile-patrol-progress", currentAttendance?.id],
+    enabled: Boolean(currentAttendance?.id),
+    queryFn: () => getPatrolProgress(currentAttendance!.id),
+    refetchOnWindowFocus: false,
+  });
+  const patrolProgress = patrolProgressQuery.data ?? null;
 
   const spotsQuery = spotHooks.useList({});
   const spotRows = React.useMemo(() => (spotsQuery.data ?? []) as Spot[], [spotsQuery.data]);
@@ -294,6 +336,10 @@ export default function MobilePatrolScanPage() {
       setSubmitError("Belum ada assignment aktif. Aktifkan assignment dulu.");
       return;
     }
+    if (!currentAttendance?.id) {
+      setSubmitError("Check-in shift dulu sebelum patroli.");
+      return;
+    }
     if (!resolvedSpot?.id) {
       setSubmitError("Scan QR spot dulu.");
       return;
@@ -311,13 +357,14 @@ export default function MobilePatrolScanPage() {
       return;
     }
 
+    const scanTimestamp = new Date().toISOString();
     setIsSubmitting(true);
     try {
       const uploadedPhoto = await uploadPhoto({
         category: "patrol",
         placeId: activePlaceId,
         userId: me.id,
-        date: localDateKey(new Date()),
+        date: todayKey,
         dataUrl: photoUrl,
         name: resolvedSpot.spot_code ?? resolvedSpot.code ?? "patrol",
       });
@@ -325,11 +372,17 @@ export default function MobilePatrolScanPage() {
         placeId: activePlaceId,
         userId: me.id,
         spotId: resolvedSpot.id,
+        attendanceId: currentAttendance.id,
         patrolRunId: patrolRunId.trim(),
+        scannedAt: scanTimestamp,
+        submitAt: scanTimestamp,
         photoUrl: uploadedPhoto.photoUrl,
         note: note.trim(),
       });
+      await queryClient.invalidateQueries({ queryKey: ["satpam-mobile-patrol-progress", currentAttendance.id] });
+      await patrolProgressQuery.refetch();
       setSuccessText("Patrol scan berhasil.");
+      setLastProgressFlash(resolvedSpot.spot_name ?? resolvedSpot.name ?? "Spot");
       setPatrolRunId(buildRunId(new Date()));
       setNote("");
       setPhotoUrl("");
@@ -339,9 +392,34 @@ export default function MobilePatrolScanPage() {
     } finally {
       setIsSubmitting(false);
     }
-  }, [activePlaceId, me?.id, myActiveAssignment, note, patrolRunId, photoUrl, resolvedSpot]);
+  }, [
+    activePlaceId,
+    currentAttendance?.id,
+    me?.id,
+    myActiveAssignment,
+    note,
+    patrolProgressQuery,
+    patrolRunId,
+    photoUrl,
+    queryClient,
+    resolvedSpot,
+    todayKey,
+  ]);
 
-  const disabledAction = !myActiveAssignment || isSubmitting;
+  React.useEffect(() => {
+    if (!lastProgressFlash) return;
+    const timer = window.setTimeout(() => setLastProgressFlash(null), 2500);
+    return () => window.clearTimeout(timer);
+  }, [lastProgressFlash]);
+
+  const disabledAction = !myActiveAssignment || !currentAttendance?.id || isSubmitting;
+  const remainingSpots = patrolProgress?.unpatrolled_spots ?? 0;
+  const completedSpots = patrolProgress?.patrolled_spots ?? 0;
+  const totalSpots = patrolProgress?.total_route_spots ?? 0;
+  const topPendingSpots = React.useMemo(
+    () => (patrolProgress?.spots ?? []).filter((spot) => !spot.is_patrolled).slice(0, 5),
+    [patrolProgress?.spots],
+  );
 
   return (
     <div className="min-h-[100svh] bg-slate-950 p-4 text-white">
@@ -350,7 +428,11 @@ export default function MobilePatrolScanPage() {
           <div>
             <div className="text-[18px] font-black">Patrol QR Scanner</div>
             <div className="text-[12px] font-semibold text-slate-300">
-              {myActiveAssignment ? "Scan QR spot, lalu isi foto + catatan" : "Belum ada assignment aktif"}
+              {myActiveAssignment
+                ? currentAttendance?.id
+                  ? "Scan QR spot, lalu isi foto + catatan"
+                  : "Check-in dulu supaya patroli tercatat per shift"
+                : "Belum ada assignment aktif"}
             </div>
           </div>
           <button
@@ -365,6 +447,77 @@ export default function MobilePatrolScanPage() {
         {!myActiveAssignment ? (
           <div className="mb-3 rounded-xl border border-rose-500/40 bg-rose-500/10 p-3 text-[12px] font-bold text-rose-200">
             Belum ada assignment aktif. Kembali ke Dashboard dan aktifkan shift dulu.
+          </div>
+        ) : null}
+        {myActiveAssignment && !currentAttendance?.id ? (
+          <div className="mb-3 rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-[12px] font-bold text-amber-200">
+            Shift sudah dipilih, tapi attendance belum check-in. Selesaikan check-in dulu sebelum mulai patroli.
+          </div>
+        ) : null}
+
+        {currentAttendance?.id ? (
+          <div className="mb-3 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-4">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <div className="text-[11px] font-extrabold uppercase tracking-[0.18em] text-emerald-200">Progress Shift</div>
+                <div className="mt-1 text-[22px] font-black text-white">
+                  {completedSpots}/{totalSpots} spot
+                </div>
+                <div className="mt-1 text-[12px] font-semibold text-emerald-100">
+                  {remainingSpots > 0 ? `${remainingSpots} spot belum dipatroli` : "Semua spot route sudah terpatroli"}
+                </div>
+              </div>
+              <div className="rounded-2xl border border-emerald-400/40 bg-slate-950/30 px-3 py-2 text-right">
+                <div className="text-[10px] font-extrabold uppercase tracking-[0.16em] text-emerald-200">Ronde</div>
+                <div className="mt-1 text-[18px] font-black text-white">{patrolProgress?.total_patrol_runs ?? 0}</div>
+                <div className="text-[11px] font-semibold text-emerald-100">{patrolProgress?.total_scans ?? 0} scan</div>
+              </div>
+            </div>
+
+            {lastProgressFlash ? (
+              <div className="mt-3 rounded-xl border border-emerald-400/30 bg-emerald-400/10 px-3 py-2 text-[12px] font-bold text-emerald-100">
+                Spot {lastProgressFlash} berhasil masuk ke progres shift.
+              </div>
+            ) : null}
+
+            <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/10">
+              <div
+                className="h-full rounded-full bg-emerald-400 transition-all"
+                style={{ width: `${totalSpots > 0 ? Math.min(100, (completedSpots / totalSpots) * 100) : 0}%` }}
+              />
+            </div>
+
+            <div className="mt-3 grid grid-cols-2 gap-2 text-[11px] font-bold text-emerald-100">
+              <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-2">
+                Attendance: {currentAttendance.id.slice(0, 8)}
+              </div>
+              <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-2">
+                Tanggal: {currentAttendance.attendance_date}
+              </div>
+            </div>
+
+            <div className="mt-3">
+              <div className="text-[11px] font-extrabold uppercase tracking-[0.16em] text-emerald-200">Spot Belum Dipatroli</div>
+              <div className="mt-2 space-y-2">
+                {topPendingSpots.length > 0 ? (
+                  topPendingSpots.map((spot) => (
+                    <div key={spot.spot_id} className="flex items-center justify-between rounded-xl border border-white/10 bg-white/5 px-3 py-2">
+                      <div>
+                        <div className="text-[13px] font-black text-white">{spot.spot_name}</div>
+                        <div className="text-[11px] font-semibold text-emerald-100">
+                          {spot.spot_code} · Urutan {spot.seq}
+                        </div>
+                      </div>
+                      <div className="text-[11px] font-black text-amber-200">Pending</div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-[12px] font-bold text-emerald-100">
+                    Tidak ada spot yang pending.
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
         ) : null}
 
@@ -483,9 +636,14 @@ export default function MobilePatrolScanPage() {
             Ukuran foto: {formatBytesToKB(estimateDataUrlSizeBytes(photoUrl))} (target {PATROL_PHOTO_MAX_KB} KB)
           </div>
         ) : null}
-        {spotsQuery.isLoading ? <div className="mt-2 text-[12px] font-bold text-slate-300">Memuat data spot...</div> : null}
+        {spotsQuery.isLoading || attendanceQuery.isLoading ? <div className="mt-2 text-[12px] font-bold text-slate-300">Memuat data spot...</div> : null}
         {!spotsQuery.isLoading && availableSpots.length === 0 ? (
           <div className="mt-2 text-[12px] font-bold text-amber-300">Belum ada spot aktif di place ini.</div>
+        ) : null}
+        {patrolProgressQuery.error ? (
+          <div className="mt-2 text-[12px] font-bold text-amber-300">
+            {patrolProgressQuery.error.message || "Gagal memuat progress patroli."}
+          </div>
         ) : null}
         {cameraError ? <div className="mt-2 text-[12px] font-bold text-amber-300">{cameraError}</div> : null}
         {scanError ? <div className="mt-2 text-[12px] font-bold text-amber-300">{scanError}</div> : null}

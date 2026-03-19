@@ -1,14 +1,16 @@
 import { createHttpAgent } from "@/libs/http";
 import { createCrudHooksV2 } from "@/libs/query-agent";
-import type { CreatedIdResponse, PatrolScan, PatrolScanCreate } from "./model";
+import type { CreatedIdResponse, PatrolProgress, PatrolScan, PatrolScanCreate } from "./model";
 import { fetchAllListRows } from "@/repository/list-response";
 
 const agent = createHttpAgent({ basePath: "/api/v1/patrol/scans", auth: true });
+const progressAgent = createHttpAgent({ basePath: "/api/v1/patrol/progress", auth: true });
 
 export type PatrolScanListParams = {
   placeId: string;
   patrolRunId?: string;
   userId?: string;
+  attendanceId?: string;
   page?: number;
   pageSize?: number;
   sortBy?: "scannedAt" | "placeId" | "userId" | "spotId" | "patrolRunId";
@@ -33,4 +35,8 @@ export async function listPatrolScans(params: PatrolScanListParams): Promise<Pat
 
 export async function createPatrolScan(body: PatrolScanCreate): Promise<CreatedIdResponse> {
   return agent.post<CreatedIdResponse>("", body);
+}
+
+export async function getPatrolProgress(attendanceId: string): Promise<PatrolProgress> {
+  return progressAgent.get<PatrolProgress>("", { query: { attendanceId } });
 }
