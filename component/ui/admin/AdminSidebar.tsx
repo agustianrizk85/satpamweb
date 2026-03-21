@@ -4,6 +4,7 @@ import * as React from "react";
 import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import {
+  AlertTriangle,
   Building2,
   CalendarClock,
   ClipboardCheck,
@@ -29,6 +30,7 @@ import SidebarMenu, { type MenuItem, type MenuLeafItem } from "@/component/ui/Si
 
 type AdminMenuKey =
   | "dashboard"
+  | "api-error-logs"
   | "attendance"
   | "visitor-log"
   | "attendance-config"
@@ -50,6 +52,7 @@ type AdminMenuKey =
 
 const ROUTE_BY_KEY: Record<AdminMenuKey, string> = {
   dashboard: "/web/dashboard",
+  "api-error-logs": "/web/api-error-logs",
   attendance: "/web/attendance",
   "visitor-log": "/web/visitor-log",
   "attendance-config": "/web/attendance-config",
@@ -243,7 +246,10 @@ export default function AdminSidebar({
         {
           label: "Main",
           icon: <LayoutGrid className="h-4 w-4" />,
-          children: [{ key: "dashboard", label: "Dashboard", icon: <LayoutGrid className="h-4 w-4" /> }],
+          children: [
+            { key: "dashboard", label: "Dashboard", icon: <LayoutGrid className="h-4 w-4" /> },
+            { key: "api-error-logs", label: "Error Log", icon: <AlertTriangle className="h-4 w-4" /> },
+          ],
         },
         {
           label: "Operasional",
