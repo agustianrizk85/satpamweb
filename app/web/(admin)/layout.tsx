@@ -13,6 +13,7 @@ const TOP_TAB_CANDIDATES: readonly TitleBarTab[] = [
   { label: "Attendance Config", href: "/web/attendance-config", subLabel: "Konfigurasi" },
   { label: "Leave Requests", href: "/web/leave-requests", subLabel: "Pengajuan" },
   { label: "Patrol", href: "/web/patrol", subLabel: "Scan QR" },
+  { label: "Patrol Runs", href: "/web/patrol-runs", subLabel: "Ronde" },
   { label: "Patrol Routes", href: "/web/patrol-routes", subLabel: "Rute" },
   { label: "Route Points", href: "/web/patrol-route-points", subLabel: "Titik rute" },
   { label: "Patrol Scans", href: "/web/patrol-scans", subLabel: "Log scan" },

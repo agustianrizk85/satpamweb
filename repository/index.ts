@@ -1,4 +1,6 @@
 export * as auth from "./auth";
+export * as appVersions from "./app-versions";
+export * as appVersionMasters from "./app-version-masters";
 export * as roles from "./Roles";
 export * as users from "./Users";
 export * as places from "./Places";
