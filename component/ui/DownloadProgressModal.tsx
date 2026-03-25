@@ -8,6 +8,8 @@ type DownloadProgressModalProps = {
   percent: number;
   title?: string;
   subtitle?: string;
+  loadedBytes?: number;
+  totalBytes?: number | null;
 };
 
 function clampPercent(value: number): number {
@@ -20,10 +22,18 @@ export default function DownloadProgressModal({
   percent,
   title = "Downloading PDF...",
   subtitle = "Mohon tunggu, file sedang disiapkan.",
+  loadedBytes = 0,
+  totalBytes = null,
 }: DownloadProgressModalProps) {
   if (!open) return null;
 
   const safePercent = clampPercent(percent);
+  const safeLoadedBytes = Math.max(0, Math.floor(loadedBytes));
+  const safeTotalBytes = totalBytes && totalBytes > 0 ? Math.floor(totalBytes) : null;
+
+  function formatMB(bytes: number): string {
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  }
 
   return (
     <div className="fixed inset-0 z-[1200] flex items-center justify-center bg-slate-900/70 p-4">
@@ -50,6 +60,16 @@ export default function DownloadProgressModal({
               />
             </div>
             <div className="mt-2 text-center text-sm font-semibold text-slate-700">{safePercent}%</div>
+            <div className="mt-2 text-center text-xs text-slate-500">
+              {safeTotalBytes
+                ? `${formatMB(safeLoadedBytes)} / ${formatMB(safeTotalBytes)}`
+                : `${formatMB(safeLoadedBytes)} transferred`}
+            </div>
+            {safeTotalBytes ? (
+              <div className="mt-1 text-center text-[11px] text-slate-400">
+                Estimasi total: {formatMB(safeTotalBytes)}
+              </div>
+            ) : null}
           </div>
         </div>
       </div>

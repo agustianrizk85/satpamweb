@@ -325,6 +325,8 @@ export default function AttendancesPage() {
   const [isDownloadingReport, setIsDownloadingReport] = React.useState(false);
   const [downloadProgressOpen, setDownloadProgressOpen] = React.useState(false);
   const [downloadProgressPercent, setDownloadProgressPercent] = React.useState(0);
+  const [downloadLoadedBytes, setDownloadLoadedBytes] = React.useState(0);
+  const [downloadTotalBytes, setDownloadTotalBytes] = React.useState<number | null>(null);
   const [reportFormat, setReportFormat] = React.useState<ReportDownloadFormat>("csv");
   const [errorText, setErrorText] = React.useState("Terjadi kesalahan.");
   const [successText, setSuccessText] = React.useState("Berhasil.");
@@ -452,6 +454,8 @@ export default function AttendancesPage() {
       if (trackPdfProgress) {
         transferStartedRef.current = false;
         setDownloadProgressPercent(1);
+        setDownloadLoadedBytes(0);
+        setDownloadTotalBytes(null);
         setDownloadProgressOpen(true);
         stopProgressTimer();
         progressTimerRef.current = setInterval(() => {
@@ -487,6 +491,8 @@ export default function AttendancesPage() {
                   stopProgressTimer();
                 }
                 setDownloadProgressPercent((prev) => Math.max(prev, progress.percent));
+                setDownloadLoadedBytes(progress.loadedBytes);
+                setDownloadTotalBytes(progress.totalBytes);
               },
             }
           : undefined,
@@ -893,6 +899,8 @@ export default function AttendancesPage() {
         percent={downloadProgressPercent}
         title="Downloading PDF Attendance"
         subtitle="Laporan sedang diunduh. Mohon tunggu..."
+        loadedBytes={downloadLoadedBytes}
+        totalBytes={downloadTotalBytes}
       />
 
       {previewPhoto ? (

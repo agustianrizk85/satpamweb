@@ -54,6 +54,12 @@ export type PatrolScanReportSummary = {
   unique_users: number;
 };
 
+export type PatrolScanReportDatesResponse = {
+  dates: string[];
+  min_date: string;
+  max_date: string;
+};
+
 export type FacilityScanReportRow = {
   id: string;
   place_id: string;

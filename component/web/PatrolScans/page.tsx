@@ -8,6 +8,7 @@ import PageHeader from "@/component/ui/PageHeader";
 import MasterTable, { type MasterTableColumn } from "@/component/ui/MasterTable";
 import Button from "@/component/ui/Button";
 import TextField from "@/component/ui/TextField";
+import DateHighlightField from "@/component/ui/DateHighlightField";
 import DownloadProgressModal from "@/component/ui/DownloadProgressModal";
 import LoadingStateCard from "@/component/ui/LoadingStateCard";
 import { ConfirmModalMaster, ErrorModalMaster, SuccessModalMaster } from "@/component/ui/layout/ModalMaster";
@@ -26,7 +27,7 @@ import { spotHooks } from "@/repository/Spots";
 
 import type { PatrolScan, PatrolScanCreate } from "@/repository/patrol-scans";
 import { createPatrolScan, listPatrolScans } from "@/repository/patrol-scans";
-import { downloadPatrolScanReportCsv } from "@/repository/reports";
+import { downloadPatrolScanReportCsv, listPatrolScanReportDates } from "@/repository/reports";
 import type { ReportDownloadFormat } from "@/repository/reports";
 
 type FormState = {
@@ -161,6 +162,7 @@ export default function PatrolScansPage() {
   const [filterRunId, setFilterRunId] = React.useState("");
   const [reportFromDate, setReportFromDate] = React.useState("");
   const [reportToDate, setReportToDate] = React.useState("");
+  const [reportCalendarMonth, setReportCalendarMonth] = React.useState(() => toDateOnly(new Date().toISOString()).slice(0, 7));
   const [tableState, setTableState] = React.useState<{
     page: number;
     pageSize: number;
@@ -260,13 +262,18 @@ export default function PatrolScansPage() {
     const ids = rows.map((r) => r.patrol_run_id).filter((v): v is string => Boolean(v && v.trim()));
     return Array.from(new Set(ids)).sort((a, b) => a.localeCompare(b));
   }, [rows]);
-  const availableReportDateRange = React.useMemo(() => {
-    const dates = rows.map((r) => toDateOnly(r.scanned_at)).filter(Boolean).sort();
-    return {
-      min: dates[0] ?? "",
-      max: dates[dates.length - 1] ?? "",
-    };
-  }, [rows]);
+  const reportMonthDatesQuery = useQuery({
+    queryKey: ["satpam-patrol-report-dates", placeId, reportCalendarMonth],
+    queryFn: async () => listPatrolScanReportDates({ placeId: placeId.trim(), month: reportCalendarMonth }),
+    enabled: Boolean(placeId.trim()),
+  });
+  const availableReportDateRange = React.useMemo(() => ({
+    min: reportMonthDatesQuery.data?.min_date ?? "",
+    max: reportMonthDatesQuery.data?.max_date ?? "",
+  }), [reportMonthDatesQuery.data?.max_date, reportMonthDatesQuery.data?.min_date]);
+  const availableReportDates = React.useMemo(() => {
+    return Array.from(new Set((reportMonthDatesQuery.data?.dates ?? []).map((date) => toDateOnly(date)).filter(Boolean))).sort();
+  }, [reportMonthDatesQuery.data?.dates]);
 
   React.useEffect(() => {
     if (!availableReportDateRange.min || !availableReportDateRange.max) return;
@@ -277,7 +284,7 @@ export default function PatrolScansPage() {
   React.useEffect(() => {
     setReportFromDate("");
     setReportToDate("");
-  }, [placeId, effectiveFilterUserId, filterRunId]);
+  }, [placeId]);
 
   const userLabelById = React.useMemo(() => {
     const m = new Map<string, string>();
@@ -302,6 +309,8 @@ export default function PatrolScansPage() {
   const [isDownloadingReport, setIsDownloadingReport] = React.useState(false);
   const [downloadProgressOpen, setDownloadProgressOpen] = React.useState(false);
   const [downloadProgressPercent, setDownloadProgressPercent] = React.useState(0);
+  const [downloadLoadedBytes, setDownloadLoadedBytes] = React.useState(0);
+  const [downloadTotalBytes, setDownloadTotalBytes] = React.useState<number | null>(null);
   const [reportFormat, setReportFormat] = React.useState<ReportDownloadFormat>("csv");
   const progressTimerRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
   const transferStartedRef = React.useRef(false);
@@ -363,6 +372,8 @@ export default function PatrolScansPage() {
       if (trackPdfProgress) {
         transferStartedRef.current = false;
         setDownloadProgressPercent(1);
+        setDownloadLoadedBytes(0);
+        setDownloadTotalBytes(null);
         setDownloadProgressOpen(true);
         stopProgressTimer();
         progressTimerRef.current = setInterval(() => {
@@ -399,6 +410,8 @@ export default function PatrolScansPage() {
                   stopProgressTimer();
                 }
                 setDownloadProgressPercent((prev) => Math.max(prev, progress.percent));
+                setDownloadLoadedBytes(progress.loadedBytes);
+                setDownloadTotalBytes(progress.totalBytes);
               },
             }
           : undefined,
@@ -540,22 +553,24 @@ export default function PatrolScansPage() {
           placeholder="RUN-2026-03-03-001"
         />
 
-        <TextField
-          type="date"
+        <DateHighlightField
           label="From Date"
           value={reportFromDate}
           min={availableReportDateRange.min || undefined}
           max={reportToDate.trim() || availableReportDateRange.max || undefined}
-          onChange={(e) => setReportFromDate(e.target.value)}
+          availableDates={availableReportDates}
+          onVisibleMonthChange={setReportCalendarMonth}
+          onChange={setReportFromDate}
         />
 
-        <TextField
-          type="date"
+        <DateHighlightField
           label="To Date"
           value={reportToDate}
           min={reportFromDate.trim() || availableReportDateRange.min || undefined}
           max={availableReportDateRange.max || undefined}
-          onChange={(e) => setReportToDate(e.target.value)}
+          availableDates={availableReportDates}
+          onVisibleMonthChange={setReportCalendarMonth}
+          onChange={setReportToDate}
         />
       </div>
       <datalist id="patrol-run-id-options">
@@ -695,6 +710,8 @@ export default function PatrolScansPage() {
         percent={downloadProgressPercent}
         title="Downloading PDF Patrol"
         subtitle="Laporan sedang diunduh. Mohon tunggu..."
+        loadedBytes={downloadLoadedBytes}
+        totalBytes={downloadTotalBytes}
       />
 
       {previewPhotoUrl ? (

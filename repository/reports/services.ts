@@ -13,6 +13,7 @@ import type {
   PatrolScanReportListParams,
   PatrolScanReportRow,
   PatrolScanReportSummary,
+  PatrolScanReportDatesResponse,
   VisitorReportDownloadParams,
   VisitorReportListParams,
   VisitorReportRow,
@@ -199,6 +200,10 @@ export async function listVisitorReports(params: VisitorReportListParams): Promi
 
 export async function listPatrolScanReports(params: PatrolScanReportListParams): Promise<ReportListResponse<PatrolScanReportRow, PatrolScanReportSummary>> {
   return patrolScanReportAgent.get<ReportListResponse<PatrolScanReportRow, PatrolScanReportSummary>>("", { query: params });
+}
+
+export async function listPatrolScanReportDates(params: { placeId?: string; month?: string }): Promise<PatrolScanReportDatesResponse> {
+  return patrolScanReportAgent.get<PatrolScanReportDatesResponse>("/dates", { query: params });
 }
 
 export async function listFacilityScanReports(params: FacilityScanReportListParams): Promise<ReportListResponse<FacilityScanReportRow, FacilityScanReportSummary>> {
