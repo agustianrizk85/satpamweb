@@ -146,6 +146,7 @@ export type PatrolScanReportListParams = {
   userId?: string;
   spotId?: string;
   patrolRunId?: string;
+  roundNo?: number;
   fromDate?: string;
   toDate?: string;
   page?: number;

@@ -160,6 +160,7 @@ export default function PatrolScansPage() {
   const [placeId, setPlaceId] = React.useState("");
   const [filterUserId, setFilterUserId] = React.useState("");
   const [filterRunId, setFilterRunId] = React.useState("");
+  const [reportRoundNo, setReportRoundNo] = React.useState("");
   const [reportFromDate, setReportFromDate] = React.useState("");
   const [reportToDate, setReportToDate] = React.useState("");
   const [reportCalendarMonth, setReportCalendarMonth] = React.useState(() => toDateOnly(new Date().toISOString()).slice(0, 7));
@@ -389,8 +390,12 @@ export default function PatrolScansPage() {
 
       const resolvedFrom = reportFromDate.trim() || availableReportDateRange.min;
       const resolvedTo = reportToDate.trim() || availableReportDateRange.max || resolvedFrom;
+      const resolvedRoundNo = reportRoundNo.trim();
       if (resolvedFrom && resolvedTo && resolvedFrom > resolvedTo) {
         throw new Error("From Date tidak boleh lebih besar dari To Date.");
+      }
+      if (resolvedRoundNo && (!/^\d+$/.test(resolvedRoundNo) || Number(resolvedRoundNo) <= 0)) {
+        throw new Error("Ronde harus berupa angka lebih dari 0.");
       }
 
       await downloadPatrolScanReportCsv(
@@ -398,6 +403,7 @@ export default function PatrolScansPage() {
           placeId: placeId.trim(),
           userId: effectiveFilterUserId || undefined,
           patrolRunId: filterRunId.trim() ? filterRunId.trim() : undefined,
+          roundNo: resolvedRoundNo ? Number(resolvedRoundNo) : undefined,
           fromDate: resolvedFrom || undefined,
           toDate: resolvedTo || undefined,
         },
@@ -501,7 +507,7 @@ export default function PatrolScansPage() {
         }
       />
 
-      <div className="mb-3 grid gap-3 app-glass rounded-[24px] p-3 shadow-[0_16px_34px_rgba(76,99,168,0.12)] sm:grid-cols-5">
+      <div className="mb-3 grid gap-3 app-glass rounded-[24px] p-3 shadow-[0_16px_34px_rgba(76,99,168,0.12)] sm:grid-cols-6">
         <label className="block">
           <span className="mb-1 block text-[13px] font-medium text-slate-800">Place</span>
           <select
@@ -551,6 +557,13 @@ export default function PatrolScansPage() {
             setTableState((prev) => ({ ...prev, page: 1 }));
           }}
           placeholder="RUN-2026-03-03-001"
+        />
+
+        <TextField
+          label="Ronde"
+          value={reportRoundNo}
+          onChange={(e) => setReportRoundNo(e.target.value.replace(/[^\d]/g, ""))}
+          placeholder="contoh: 1"
         />
 
         <DateHighlightField
