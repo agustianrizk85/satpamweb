@@ -274,6 +274,10 @@ export default function PatrolScansPage() {
     queryFn: async () => listPatrolScanReportDates({ placeId: placeId.trim(), month: reportCalendarMonth }),
     enabled: Boolean(placeId.trim()),
   });
+  const availableReportDateRange = React.useMemo(() => ({
+    min: reportMonthDatesQuery.data?.min_date ?? "",
+    max: reportMonthDatesQuery.data?.max_date ?? "",
+  }), [reportMonthDatesQuery.data?.max_date, reportMonthDatesQuery.data?.min_date]);
   const reportRunOptionsQuery = useQuery({
     queryKey: ["satpam-patrol-report-run-options", placeId, effectiveFilterUserId, reportShiftId, reportFromDate, reportToDate, availableReportDateRange.min, availableReportDateRange.max],
     queryFn: async () =>
@@ -289,10 +293,6 @@ export default function PatrolScansPage() {
       }),
     enabled: Boolean(placeId.trim()),
   });
-  const availableReportDateRange = React.useMemo(() => ({
-    min: reportMonthDatesQuery.data?.min_date ?? "",
-    max: reportMonthDatesQuery.data?.max_date ?? "",
-  }), [reportMonthDatesQuery.data?.max_date, reportMonthDatesQuery.data?.min_date]);
   const availableReportDates = React.useMemo(() => {
     return Array.from(new Set((reportMonthDatesQuery.data?.dates ?? []).map((date) => toDateOnly(date)).filter(Boolean))).sort();
   }, [reportMonthDatesQuery.data?.dates]);
