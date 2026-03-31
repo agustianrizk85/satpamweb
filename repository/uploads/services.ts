@@ -2,7 +2,7 @@ import { getToken } from "@/libs/auth";
 import { resolveAssetUrl } from "@/libs/asset-url";
 
 const API_BASE_URL = String(
-  process.env.NEXT_PUBLIC_AUTH_BASE ?? process.env.AUTH_API_BASE ?? "",
+  process.env.NEXT_PUBLIC_ASSET_BASE ?? process.env.NEXT_PUBLIC_AUTH_BASE ?? process.env.AUTH_API_BASE ?? "",
 ).replace(/\/$/, "");
 
 type UploadCategory = "attendance" | "patrol";

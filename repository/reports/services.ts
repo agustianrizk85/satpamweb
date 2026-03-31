@@ -14,6 +14,7 @@ import type {
   PatrolScanReportRow,
   PatrolScanReportSummary,
   PatrolScanReportDatesResponse,
+  PatrolScanRoundOption,
   VisitorReportDownloadParams,
   VisitorReportListParams,
   VisitorReportRow,
@@ -204,6 +205,11 @@ export async function listPatrolScanReports(params: PatrolScanReportListParams):
 
 export async function listPatrolScanReportDates(params: { placeId?: string; month?: string }): Promise<PatrolScanReportDatesResponse> {
   return patrolScanReportAgent.get<PatrolScanReportDatesResponse>("/dates", { query: params });
+}
+
+export async function listPatrolScanReportRounds(params: PatrolScanReportDownloadParams): Promise<PatrolScanRoundOption[]> {
+  const response = await patrolScanReportAgent.get<{ data?: PatrolScanRoundOption[] }>("/rounds", { query: params });
+  return response.data ?? [];
 }
 
 export async function listFacilityScanReports(params: FacilityScanReportListParams): Promise<ReportListResponse<FacilityScanReportRow, FacilityScanReportSummary>> {

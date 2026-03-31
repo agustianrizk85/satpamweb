@@ -26,11 +26,10 @@ import type { Spot } from "@/repository/Spots";
 import { spotHooks } from "@/repository/Spots";
 import type { Shift } from "@/repository/Shifts";
 import { shiftHooks } from "@/repository/Shifts";
-import { listPatrolRuns } from "@/repository/patrol-runs/services";
 
 import type { PatrolScan, PatrolScanCreate } from "@/repository/patrol-scans";
 import { createPatrolScan, listPatrolScans } from "@/repository/patrol-scans";
-import { downloadPatrolScanReportCsv, listPatrolScanReportDates } from "@/repository/reports";
+import { downloadPatrolScanReportCsv, listPatrolScanReportDates, listPatrolScanReportRounds } from "@/repository/reports";
 import type { ReportDownloadFormat } from "@/repository/reports";
 
 type FormState = {
@@ -281,17 +280,14 @@ export default function PatrolScansPage() {
   const reportRunOptionsQuery = useQuery({
     queryKey: ["satpam-patrol-report-run-options", placeId, effectiveFilterUserId, reportShiftId, reportFromDate, reportToDate, availableReportDateRange.min, availableReportDateRange.max],
     queryFn: async () =>
-      listPatrolRuns({
+      listPatrolScanReportRounds({
         placeId: placeId.trim(),
         userId: effectiveFilterUserId || undefined,
         shiftId: reportShiftId.trim() || undefined,
         fromDate: reportFromDate.trim() || availableReportDateRange.min || undefined,
         toDate: reportToDate.trim() || availableReportDateRange.max || undefined,
-        sortBy: "runNo",
-        sortOrder: "asc",
-        pageSize: 500,
       }),
-    enabled: Boolean(placeId.trim()),
+    enabled: Boolean(placeId.trim() && reportShiftId.trim()),
   });
   const availableReportDates = React.useMemo(() => {
     return Array.from(new Set((reportMonthDatesQuery.data?.dates ?? []).map((date) => toDateOnly(date)).filter(Boolean))).sort();
@@ -299,7 +295,7 @@ export default function PatrolScansPage() {
   const availableReportRounds = React.useMemo(() => {
     const runs = reportRunOptionsQuery.data ?? [];
     const roundNos = runs
-      .map((run) => run.run_no)
+      .map((run) => run.round_no)
       .filter((value) => Number.isFinite(value) && value > 0);
     return Array.from(new Set(roundNos)).sort((a, b) => a - b);
   }, [reportRunOptionsQuery.data]);
@@ -620,23 +616,6 @@ export default function PatrolScansPage() {
           </select>
         </label>
 
-        <label className="block">
-          <span className="mb-1 block text-[13px] font-medium text-slate-800">Ronde</span>
-          <select
-            value={reportRoundNo}
-            onChange={(e) => setReportRoundNo(e.target.value)}
-            disabled={!placeId.trim() || !reportShiftId.trim()}
-            className="w-full rounded-xl border border-white/70 bg-white/85 px-3.5 py-3 text-[13px] text-slate-900 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)] outline-none focus:border-sky-400/60 focus:bg-white focus:ring-4 focus:ring-sky-400/15"
-          >
-            <option value="">All</option>
-            {availableReportRounds.map((roundNo) => (
-              <option key={roundNo} value={String(roundNo)}>
-                Ronde {roundNo}
-              </option>
-            ))}
-          </select>
-        </label>
-
         <DateHighlightField
           label="From Date"
           value={reportFromDate}
@@ -656,6 +635,23 @@ export default function PatrolScansPage() {
           onVisibleMonthChange={setReportCalendarMonth}
           onChange={setReportToDate}
         />
+
+        <label className="block">
+          <span className="mb-1 block text-[13px] font-medium text-slate-800">Ronde</span>
+          <select
+            value={reportRoundNo}
+            onChange={(e) => setReportRoundNo(e.target.value)}
+            disabled={!placeId.trim() || !reportShiftId.trim() || !reportFromDate.trim() || !reportToDate.trim()}
+            className="w-full rounded-xl border border-white/70 bg-white/85 px-3.5 py-3 text-[13px] text-slate-900 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)] outline-none focus:border-sky-400/60 focus:bg-white focus:ring-4 focus:ring-sky-400/15"
+          >
+            <option value="">All</option>
+            {availableReportRounds.map((roundNo) => (
+              <option key={roundNo} value={String(roundNo)}>
+                Ronde {roundNo}
+              </option>
+            ))}
+          </select>
+        </label>
       </div>
       <datalist id="patrol-run-id-options">
         {knownRunIds.map((runId) => (

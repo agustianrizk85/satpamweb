@@ -62,6 +62,12 @@ export type PatrolScanReportDatesResponse = {
   max_date: string;
 };
 
+export type PatrolScanRoundOption = {
+  round_no: number;
+  patrol_run_id: string;
+  started_at: string;
+};
+
 export type FacilityScanReportRow = {
   id: string;
   place_id: string;
