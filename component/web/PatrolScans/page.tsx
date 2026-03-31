@@ -26,7 +26,7 @@ import type { Spot } from "@/repository/Spots";
 import { spotHooks } from "@/repository/Spots";
 import type { Shift } from "@/repository/Shifts";
 import { shiftHooks } from "@/repository/Shifts";
-import { listPatrolRuns } from "@/repository/patrol-runs";
+import { listPatrolRuns } from "@/repository/patrol-runs/services";
 
 import type { PatrolScan, PatrolScanCreate } from "@/repository/patrol-scans";
 import { createPatrolScan, listPatrolScans } from "@/repository/patrol-scans";
