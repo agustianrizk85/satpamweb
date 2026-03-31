@@ -9,7 +9,10 @@ export type PatrolRunListParams = {
   placeId: string;
   userId?: string;
   attendanceId?: string;
+  shiftId?: string;
   status?: string;
+  fromDate?: string;
+  toDate?: string;
   page?: number;
   pageSize?: number;
   sortBy?: "runNo" | "status" | "startedAt" | "completedAt" | "createdAt" | "updatedAt" | "userId" | "attendanceId" | "totalActiveSpots";

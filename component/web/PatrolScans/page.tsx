@@ -275,11 +275,14 @@ export default function PatrolScansPage() {
     enabled: Boolean(placeId.trim()),
   });
   const reportRunOptionsQuery = useQuery({
-    queryKey: ["satpam-patrol-report-run-options", placeId, effectiveFilterUserId],
+    queryKey: ["satpam-patrol-report-run-options", placeId, effectiveFilterUserId, reportShiftId, reportFromDate, reportToDate, availableReportDateRange.min, availableReportDateRange.max],
     queryFn: async () =>
       listPatrolRuns({
         placeId: placeId.trim(),
         userId: effectiveFilterUserId || undefined,
+        shiftId: reportShiftId.trim() || undefined,
+        fromDate: reportFromDate.trim() || availableReportDateRange.min || undefined,
+        toDate: reportToDate.trim() || availableReportDateRange.max || undefined,
         sortBy: "runNo",
         sortOrder: "asc",
         pageSize: 500,
@@ -294,21 +297,12 @@ export default function PatrolScansPage() {
     return Array.from(new Set((reportMonthDatesQuery.data?.dates ?? []).map((date) => toDateOnly(date)).filter(Boolean))).sort();
   }, [reportMonthDatesQuery.data?.dates]);
   const availableReportRounds = React.useMemo(() => {
-    const resolvedFrom = reportFromDate.trim() || availableReportDateRange.min;
-    const resolvedTo = reportToDate.trim() || availableReportDateRange.max || resolvedFrom;
     const runs = reportRunOptionsQuery.data ?? [];
     const roundNos = runs
-      .filter((run) => {
-        const runDate = toDateOnly(run.started_at);
-        if (!runDate) return false;
-        if (resolvedFrom && runDate < resolvedFrom) return false;
-        if (resolvedTo && runDate > resolvedTo) return false;
-        return true;
-      })
       .map((run) => run.run_no)
       .filter((value) => Number.isFinite(value) && value > 0);
     return Array.from(new Set(roundNos)).sort((a, b) => a - b);
-  }, [availableReportDateRange.max, availableReportDateRange.min, reportFromDate, reportRunOptionsQuery.data, reportToDate]);
+  }, [reportRunOptionsQuery.data]);
 
   React.useEffect(() => {
     if (!availableReportDateRange.min || !availableReportDateRange.max) return;
@@ -325,6 +319,8 @@ export default function PatrolScansPage() {
   React.useEffect(() => {
     setReportFromDate("");
     setReportToDate("");
+    setReportShiftId("");
+    setReportRoundNo("");
   }, [placeId]);
 
   const userLabelById = React.useMemo(() => {
@@ -408,7 +404,16 @@ export default function PatrolScansPage() {
   const onDownloadReport = async () => {
     const trackPdfProgress = reportFormat === "pdf";
     try {
-      if (!placeId.trim()) throw new Error("Place wajib dipilih.");
+      const resolvedFrom = reportFromDate.trim() || availableReportDateRange.min;
+      const resolvedTo = reportToDate.trim() || availableReportDateRange.max || resolvedFrom;
+      const missingFields: string[] = [];
+      if (!placeId.trim()) missingFields.push("Place");
+      if (!reportShiftId.trim()) missingFields.push("Shift");
+      if (!resolvedFrom) missingFields.push("From Date");
+      if (!resolvedTo) missingFields.push("To Date");
+      if (missingFields.length > 0) {
+        throw new Error(`Silahkan isi terlebih dahulu: ${missingFields.join(", ")}.`);
+      }
       setIsDownloadingReport(true);
       if (trackPdfProgress) {
         transferStartedRef.current = false;
@@ -428,8 +433,6 @@ export default function PatrolScansPage() {
         }, 240);
       }
 
-      const resolvedFrom = reportFromDate.trim() || availableReportDateRange.min;
-      const resolvedTo = reportToDate.trim() || availableReportDateRange.max || resolvedFrom;
       const resolvedRoundNo = reportRoundNo.trim();
       if (resolvedFrom && resolvedTo && resolvedFrom > resolvedTo) {
         throw new Error("From Date tidak boleh lebih besar dari To Date.");
@@ -605,6 +608,7 @@ export default function PatrolScansPage() {
           <select
             value={reportShiftId}
             onChange={(e) => setReportShiftId(e.target.value)}
+            disabled={!placeId.trim()}
             className="w-full rounded-xl border border-white/70 bg-white/85 px-3.5 py-3 text-[13px] text-slate-900 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)] outline-none focus:border-sky-400/60 focus:bg-white focus:ring-4 focus:ring-sky-400/15"
           >
             <option value="">All</option>
@@ -621,6 +625,7 @@ export default function PatrolScansPage() {
           <select
             value={reportRoundNo}
             onChange={(e) => setReportRoundNo(e.target.value)}
+            disabled={!placeId.trim() || !reportShiftId.trim()}
             className="w-full rounded-xl border border-white/70 bg-white/85 px-3.5 py-3 text-[13px] text-slate-900 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)] outline-none focus:border-sky-400/60 focus:bg-white focus:ring-4 focus:ring-sky-400/15"
           >
             <option value="">All</option>
