@@ -144,6 +144,7 @@ export type AttendanceReportListParams = {
 export type PatrolScanReportListParams = {
   placeId?: string;
   userId?: string;
+  shiftId?: string;
   spotId?: string;
   patrolRunId?: string;
   roundNo?: number;

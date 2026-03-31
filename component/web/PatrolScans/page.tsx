@@ -24,6 +24,9 @@ import type { MeResponse } from "@/repository/auth";
 import { me as getMe } from "@/repository/auth";
 import type { Spot } from "@/repository/Spots";
 import { spotHooks } from "@/repository/Spots";
+import type { Shift } from "@/repository/Shifts";
+import { shiftHooks } from "@/repository/Shifts";
+import { listPatrolRuns } from "@/repository/patrol-runs";
 
 import type { PatrolScan, PatrolScanCreate } from "@/repository/patrol-scans";
 import { createPatrolScan, listPatrolScans } from "@/repository/patrol-scans";
@@ -160,6 +163,7 @@ export default function PatrolScansPage() {
   const [placeId, setPlaceId] = React.useState("");
   const [filterUserId, setFilterUserId] = React.useState("");
   const [filterRunId, setFilterRunId] = React.useState("");
+  const [reportShiftId, setReportShiftId] = React.useState("");
   const [reportRoundNo, setReportRoundNo] = React.useState("");
   const [reportFromDate, setReportFromDate] = React.useState("");
   const [reportToDate, setReportToDate] = React.useState("");
@@ -180,6 +184,7 @@ export default function PatrolScansPage() {
   const places = placeHooks.useList({});
   const users = userHooks.useList({}, { enabled: canLoadUsers });
   const spots = spotHooks.useList({ placeId: placeId.trim() ? placeId.trim() : undefined }, { enabled: Boolean(placeId.trim()) });
+  const shifts = shiftHooks.useList({});
 
   const placeRows = React.useMemo(() => (places.data ?? []) as Place[], [places.data]);
   const userRows = React.useMemo(() => {
@@ -198,6 +203,7 @@ export default function PatrolScansPage() {
     ];
   }, [authUser?.fullName, authUser?.username, isGuard, ownUserId, users.data]);
   const spotRows = React.useMemo(() => (spots.data ?? []) as Spot[], [spots.data]);
+  const shiftRows = React.useMemo(() => ((shifts.data ?? []) as Shift[]).filter((s) => !placeId.trim() || s.place_id === placeId.trim()), [placeId, shifts.data]);
 
   React.useEffect(() => {
     if (placeId.trim()) return;
@@ -268,6 +274,18 @@ export default function PatrolScansPage() {
     queryFn: async () => listPatrolScanReportDates({ placeId: placeId.trim(), month: reportCalendarMonth }),
     enabled: Boolean(placeId.trim()),
   });
+  const reportRunOptionsQuery = useQuery({
+    queryKey: ["satpam-patrol-report-run-options", placeId, effectiveFilterUserId],
+    queryFn: async () =>
+      listPatrolRuns({
+        placeId: placeId.trim(),
+        userId: effectiveFilterUserId || undefined,
+        sortBy: "runNo",
+        sortOrder: "asc",
+        pageSize: 500,
+      }),
+    enabled: Boolean(placeId.trim()),
+  });
   const availableReportDateRange = React.useMemo(() => ({
     min: reportMonthDatesQuery.data?.min_date ?? "",
     max: reportMonthDatesQuery.data?.max_date ?? "",
@@ -275,12 +293,34 @@ export default function PatrolScansPage() {
   const availableReportDates = React.useMemo(() => {
     return Array.from(new Set((reportMonthDatesQuery.data?.dates ?? []).map((date) => toDateOnly(date)).filter(Boolean))).sort();
   }, [reportMonthDatesQuery.data?.dates]);
+  const availableReportRounds = React.useMemo(() => {
+    const resolvedFrom = reportFromDate.trim() || availableReportDateRange.min;
+    const resolvedTo = reportToDate.trim() || availableReportDateRange.max || resolvedFrom;
+    const runs = reportRunOptionsQuery.data ?? [];
+    const roundNos = runs
+      .filter((run) => {
+        const runDate = toDateOnly(run.started_at);
+        if (!runDate) return false;
+        if (resolvedFrom && runDate < resolvedFrom) return false;
+        if (resolvedTo && runDate > resolvedTo) return false;
+        return true;
+      })
+      .map((run) => run.run_no)
+      .filter((value) => Number.isFinite(value) && value > 0);
+    return Array.from(new Set(roundNos)).sort((a, b) => a - b);
+  }, [availableReportDateRange.max, availableReportDateRange.min, reportFromDate, reportRunOptionsQuery.data, reportToDate]);
 
   React.useEffect(() => {
     if (!availableReportDateRange.min || !availableReportDateRange.max) return;
     setReportFromDate((prev) => (prev.trim() ? prev : availableReportDateRange.min));
     setReportToDate((prev) => (prev.trim() ? prev : availableReportDateRange.max));
   }, [availableReportDateRange.max, availableReportDateRange.min]);
+
+  React.useEffect(() => {
+    if (!reportRoundNo.trim()) return;
+    if (availableReportRounds.includes(Number(reportRoundNo))) return;
+    setReportRoundNo("");
+  }, [availableReportRounds, reportRoundNo]);
 
   React.useEffect(() => {
     setReportFromDate("");
@@ -402,6 +442,7 @@ export default function PatrolScansPage() {
         {
           placeId: placeId.trim(),
           userId: effectiveFilterUserId || undefined,
+          shiftId: reportShiftId.trim() || undefined,
           patrolRunId: filterRunId.trim() ? filterRunId.trim() : undefined,
           roundNo: resolvedRoundNo ? Number(resolvedRoundNo) : undefined,
           fromDate: resolvedFrom || undefined,
@@ -507,7 +548,7 @@ export default function PatrolScansPage() {
         }
       />
 
-      <div className="mb-3 grid gap-3 app-glass rounded-[24px] p-3 shadow-[0_16px_34px_rgba(76,99,168,0.12)] sm:grid-cols-6">
+      <div className="mb-3 grid gap-3 app-glass rounded-[24px] p-3 shadow-[0_16px_34px_rgba(76,99,168,0.12)] sm:grid-cols-7">
         <label className="block">
           <span className="mb-1 block text-[13px] font-medium text-slate-800">Place</span>
           <select
@@ -559,12 +600,37 @@ export default function PatrolScansPage() {
           placeholder="RUN-2026-03-03-001"
         />
 
-        <TextField
-          label="Ronde"
-          value={reportRoundNo}
-          onChange={(e) => setReportRoundNo(e.target.value.replace(/[^\d]/g, ""))}
-          placeholder="contoh: 1"
-        />
+        <label className="block">
+          <span className="mb-1 block text-[13px] font-medium text-slate-800">Shift</span>
+          <select
+            value={reportShiftId}
+            onChange={(e) => setReportShiftId(e.target.value)}
+            className="w-full rounded-xl border border-white/70 bg-white/85 px-3.5 py-3 text-[13px] text-slate-900 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)] outline-none focus:border-sky-400/60 focus:bg-white focus:ring-4 focus:ring-sky-400/15"
+          >
+            <option value="">All</option>
+            {shiftRows.map((shift) => (
+              <option key={shift.id} value={shift.id}>
+                {shift.name} ({shift.start_time} - {shift.end_time})
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label className="block">
+          <span className="mb-1 block text-[13px] font-medium text-slate-800">Ronde</span>
+          <select
+            value={reportRoundNo}
+            onChange={(e) => setReportRoundNo(e.target.value)}
+            className="w-full rounded-xl border border-white/70 bg-white/85 px-3.5 py-3 text-[13px] text-slate-900 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)] outline-none focus:border-sky-400/60 focus:bg-white focus:ring-4 focus:ring-sky-400/15"
+          >
+            <option value="">All</option>
+            {availableReportRounds.map((roundNo) => (
+              <option key={roundNo} value={String(roundNo)}>
+                Ronde {roundNo}
+              </option>
+            ))}
+          </select>
+        </label>
 
         <DateHighlightField
           label="From Date"
