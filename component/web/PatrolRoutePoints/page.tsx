@@ -15,7 +15,7 @@ import type { Spot } from "@/repository/Spots";
 import { spotHooks } from "@/repository/Spots";
 
 import type { PatrolRoutePoint, PatrolRoutePointCreate } from "@/repository/patrol-route-points";
-import { patrolRoutePointHooks } from "@/repository/patrol-route-points";
+import { deletePatrolRoutePoint, patrolRoutePointHooks } from "@/repository/patrol-route-points";
 
 type FormState = {
   placeId: string;
@@ -81,6 +81,7 @@ export default function PatrolRoutePointsPage() {
   );
 
   const createMut = patrolRoutePointHooks.useCreate();
+  const [deleteTarget, setDeleteTarget] = React.useState<PatrolRoutePoint | null>(null);
 
   const rows = React.useMemo(() => (list.data ?? []) as PatrolRoutePoint[], [list.data]);
   const listMeta = React.useMemo(() => readListMeta(list.data), [list.data]);
@@ -96,7 +97,11 @@ export default function PatrolRoutePointsPage() {
 
   const spotNameById = React.useMemo(() => {
     const m = new Map<string, string>();
-    for (const s of spotRows) m.set(s.id, `${s.name ?? s.code}`);
+    for (const s of spotRows) {
+      const spotName = s.name ?? s.spot_name ?? s.id;
+      const spotCode = s.code ?? s.spot_code ?? "-";
+      m.set(s.id, `${spotName} (${spotCode})`);
+    }
     return m;
   }, [spotRows]);
 
@@ -140,12 +145,40 @@ export default function PatrolRoutePointsPage() {
     }
   };
 
+  const submitDelete = async () => {
+    if (!deleteTarget) return;
+    try {
+      await deletePatrolRoutePoint({ id: deleteTarget.id, placeId: deleteTarget.place_id });
+      setDeleteTarget(null);
+      await list.refetch();
+      setSuccessText("Route point berhasil dihapus.");
+      setSuccessOpen(true);
+    } catch (e) {
+      setErrorText(e instanceof Error ? e.message : "Gagal menghapus route point.");
+      setErrorOpen(true);
+    }
+  };
+
   const columns = React.useMemo<readonly MasterTableColumn<PatrolRoutePoint>[]>(() => {
     return [
       { key: "seq", header: "Seq", sortable: true, className: "w-[100px]" },
       { key: "spot_id", header: "Spot", render: (r) => spotNameById.get(r.spot_id) ?? r.spot_id },
       { key: "is_active", header: "Active", sortable: true, className: "w-[120px]", render: (r) => (r.is_active ? "YES" : "NO") },
       { key: "created_at", header: "Created", className: "w-[200px]" },
+      {
+        key: "actions",
+        header: "Actions",
+        className: "w-[140px]",
+        render: (r) => (
+          <Button
+            variant="secondary"
+            className="border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100"
+            onClick={() => setDeleteTarget(r)}
+          >
+            Delete
+          </Button>
+        ),
+      },
     ];
   }, [spotNameById]);
 
@@ -239,7 +272,7 @@ export default function PatrolRoutePointsPage() {
                 <option value="">Pilih spot</option>
                 {filteredSpots.map((s) => (
                   <option key={s.id} value={s.id}>
-                    {s.name} ({s.code})
+                    {s.name ?? s.spot_name ?? s.id} ({s.code ?? s.spot_code ?? "-"})
                   </option>
                 ))}
               </select>
@@ -261,6 +294,25 @@ export default function PatrolRoutePointsPage() {
           </div>
         }
         confirmLabel="Create"
+        cancelLabel="Cancel"
+      />
+
+      <ConfirmModalMaster
+        open={Boolean(deleteTarget)}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={submitDelete}
+        moduleLabel="Patrol Route Points"
+        action="delete"
+        title="Delete Route Point"
+        message={
+          <div className="text-sm text-slate-700">
+            Yakin hapus route point
+            {" "}
+            <b>{deleteTarget ? (spotNameById.get(deleteTarget.spot_id) ?? deleteTarget.spot_id) : "-"}</b>
+            ?
+          </div>
+        }
+        confirmLabel="Delete"
         cancelLabel="Cancel"
       />
 

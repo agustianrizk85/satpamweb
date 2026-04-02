@@ -51,12 +51,17 @@ function toQueryString(query?: QueryObject): string {
   return params.toString();
 }
 
-function resolveApiBaseUrl(): string {
-  return String(process.env.NEXT_PUBLIC_AUTH_BASE ?? process.env.AUTH_API_BASE ?? "").replace(/\/$/, "");
+function resolveDownloadBaseUrl(): string {
+  return String(
+    process.env.NEXT_PUBLIC_DOWNLOAD_BASE ??
+      process.env.NEXT_PUBLIC_AUTH_BASE ??
+      process.env.AUTH_API_BASE ??
+      "",
+  ).replace(/\/$/, "");
 }
 
-function buildApiUrl(path: string, query?: QueryObject): string {
-  const base = resolveApiBaseUrl();
+function buildDownloadUrl(path: string, query?: QueryObject): string {
+  const base = resolveDownloadBaseUrl();
   const absolute = /^https?:\/\//i.test(path);
   const fullPath = absolute ? path : `${base}${path}`;
   const qs = toQueryString(query);
@@ -137,7 +142,7 @@ async function downloadReportFile(
   };
   if (token) headers.Authorization = `Bearer ${token}`;
 
-  const res = await fetch(buildApiUrl(path, { ...query, format }), {
+  const res = await fetch(buildDownloadUrl(path, { ...query, format }), {
     method: "GET",
     cache: "no-store",
     headers,
