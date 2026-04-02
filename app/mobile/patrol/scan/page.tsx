@@ -336,10 +336,6 @@ export default function MobilePatrolScanPage() {
       setSubmitError("Belum ada assignment aktif. Aktifkan assignment dulu.");
       return;
     }
-    if (!currentAttendance?.id) {
-      setSubmitError("Check-in shift dulu sebelum patroli.");
-      return;
-    }
     if (!resolvedSpot?.id) {
       setSubmitError("Scan QR spot dulu.");
       return;
@@ -372,15 +368,17 @@ export default function MobilePatrolScanPage() {
         placeId: activePlaceId,
         userId: me.id,
         spotId: resolvedSpot.id,
-        attendanceId: currentAttendance.id,
+        attendanceId: currentAttendance?.id,
         patrolRunId: patrolRunId.trim(),
         scannedAt: scanTimestamp,
         submitAt: scanTimestamp,
         photoUrl: uploadedPhoto.photoUrl,
         note: note.trim(),
       });
-      await queryClient.invalidateQueries({ queryKey: ["satpam-mobile-patrol-progress", currentAttendance.id] });
-      await patrolProgressQuery.refetch();
+      if (currentAttendance?.id) {
+        await queryClient.invalidateQueries({ queryKey: ["satpam-mobile-patrol-progress", currentAttendance.id] });
+        await patrolProgressQuery.refetch();
+      }
       setSuccessText("Patrol scan berhasil.");
       setLastProgressFlash(resolvedSpot.spot_name ?? resolvedSpot.name ?? "Spot");
       setPatrolRunId(buildRunId(new Date()));
@@ -412,7 +410,7 @@ export default function MobilePatrolScanPage() {
     return () => window.clearTimeout(timer);
   }, [lastProgressFlash]);
 
-  const disabledAction = !myActiveAssignment || !currentAttendance?.id || isSubmitting;
+  const disabledAction = !myActiveAssignment || isSubmitting;
   const remainingSpots = patrolProgress?.unpatrolled_spots ?? 0;
   const completedSpots = patrolProgress?.patrolled_spots ?? 0;
   const totalSpots = patrolProgress?.total_route_spots ?? 0;
@@ -431,7 +429,7 @@ export default function MobilePatrolScanPage() {
               {myActiveAssignment
                 ? currentAttendance?.id
                   ? "Scan QR spot, lalu isi foto + catatan"
-                  : "Check-in dulu supaya patroli tercatat per shift"
+                  : "Scan QR spot, lalu isi foto + catatan tanpa attendance"
                 : "Belum ada assignment aktif"}
             </div>
           </div>
@@ -451,7 +449,7 @@ export default function MobilePatrolScanPage() {
         ) : null}
         {myActiveAssignment && !currentAttendance?.id ? (
           <div className="mb-3 rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-[12px] font-bold text-amber-200">
-            Shift sudah dipilih, tapi attendance belum check-in. Selesaikan check-in dulu sebelum mulai patroli.
+            Shift sudah dipilih, tapi attendance belum check-in. Patroli tetap bisa jalan, hanya progres shift tidak dihitung.
           </div>
         ) : null}
 

@@ -11,6 +11,7 @@ export * as spotAssignments from "./spot-assignments";
 export * as attendances from "./attendances";
 export * as visitors from "./visitors";
 export * as attendanceConfig from "./attendance-config";
+export * as tokenConfig from "./token-config";
 export * as patrolscan from "./patrol-scans";
 export * as patrolRoutePoints from "./patrol-route-points";
 export * as leaveRequests from "./leave-requests";

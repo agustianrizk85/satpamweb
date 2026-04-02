@@ -396,10 +396,6 @@ export default function DashboardPage() {
       setPatrolError("Belum ada spot assignment aktif untuk user ini.");
       return;
     }
-    if (!activeAttendance?.id) {
-      setPatrolError("Check-in shift dulu sebelum mulai patroli.");
-      return;
-    }
 
     setIsStartingPatrol(true);
     try {
@@ -409,7 +405,7 @@ export default function DashboardPage() {
     } finally {
       setIsStartingPatrol(false);
     }
-  }, [activeAttendance?.id, activePlaceId, isStartingPatrol, me?.id, myActiveAssignment, router]);
+  }, [activePlaceId, isStartingPatrol, me?.id, myActiveAssignment, router]);
 
   const openFacilityPatrol = React.useCallback(async () => {
     if (isStartingFacilityPatrol) return;
@@ -568,7 +564,6 @@ export default function DashboardPage() {
                 <button
                   type="button"
                   onClick={() => void openPatrolScanner()}
-                  disabled={!activeAttendance?.id}
                   className="flex h-[46px] items-center justify-center gap-2 rounded-[14px] border border-[#cfe3ff] bg-white text-[13px] font-black text-[#0b3a86] active:scale-[0.99]"
                 >
                   <QrCode size={18} className="text-[#0b3a86]" />
@@ -671,7 +666,6 @@ export default function DashboardPage() {
               <button
                 type="button"
                 onClick={() => void openPatrolScanner()}
-                disabled={!activeAttendance?.id}
                 className="flex items-center gap-3 rounded-[16px] border border-slate-200 bg-white p-3 text-left active:scale-[0.99]"
               >
                 <div className="flex h-[40px] w-[40px] items-center justify-center rounded-[12px] bg-blue-50">
@@ -680,7 +674,7 @@ export default function DashboardPage() {
                 <div className="min-w-0">
                   <div className="text-[14px] font-black text-slate-900">Mulai Patrol</div>
                   <div className="mt-1 text-[11px] font-bold text-slate-500">
-                    {activeAttendance?.id ? "Session patroli" : "Butuh check-in aktif"}
+                    {activeAttendance?.id ? "Session patroli + progres shift" : "Bisa jalan tanpa absen"}
                   </div>
                 </div>
               </button>

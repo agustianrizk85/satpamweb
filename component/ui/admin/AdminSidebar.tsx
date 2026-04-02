@@ -35,6 +35,7 @@ type AdminMenuKey =
   | "attendance"
   | "visitor-log"
   | "attendance-config"
+  | "token-config"
   | "patrol"
   | "patrol-runs"
   | "patrol-routes"
@@ -59,6 +60,7 @@ const ROUTE_BY_KEY: Record<AdminMenuKey, string> = {
   attendance: "/web/attendance",
   "visitor-log": "/web/visitor-log",
   "attendance-config": "/web/attendance-config",
+  "token-config": "/web/token-config",
   patrol: "/web/patrol",
   "patrol-runs": "/web/patrol-runs",
   "patrol-routes": "/web/patrol-routes",
@@ -232,6 +234,7 @@ export default function AdminSidebar({
       if (isSuperAdmin) {
         masterChildren.push({ key: "place-admins", label: "Place Admins", icon: <UserCheck className="h-4 w-4" /> });
         masterChildren.push({ key: "app-versions", label: "App Versions", icon: <Shield className="h-4 w-4" /> });
+        masterChildren.push({ key: "token-config", label: "Token Config", icon: <Settings className="h-4 w-4" /> });
       }
 
       const operationalChildren: MenuLeafItem<AdminMenuKey>[] = [
