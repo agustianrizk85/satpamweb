@@ -51,6 +51,10 @@ function formatDateTime(value: string | null | undefined): string {
   }).format(parsed).replace(/\./g, ":") + " WIB";
 }
 
+function formatRunLabel(runNo: number | null | undefined): string {
+  return Number(runNo) === 0 ? "Tanpa Ronde" : `Ronde ${runNo ?? "-"}`;
+}
+
 export default function PatrolRunReportsPage() {
   const places = placeHooks.useList({});
   const shifts = shiftHooks.useList({});
@@ -115,7 +119,7 @@ export default function PatrolRunReportsPage() {
   const availableRounds = React.useMemo(() => {
     const roundNos = (runOptionsQuery.data ?? [])
       .map((run) => run.round_no)
-      .filter((value) => Number.isFinite(value) && value > 0);
+      .filter((value) => Number.isFinite(value) && value >= 0);
     return Array.from(new Set(roundNos)).sort((a, b) => a - b);
   }, [runOptionsQuery.data]);
 
@@ -217,7 +221,7 @@ export default function PatrolRunReportsPage() {
   };
 
   const columns = React.useMemo<readonly MasterTableColumn<PatrolRun>[]>(() => [
-    { key: "run_no", header: "Ronde", className: "w-[90px]" },
+    { key: "run_no", header: "Ronde", className: "w-[140px]", render: (row) => formatRunLabel(row.run_no) },
     { key: "status", header: "Status", className: "w-[120px]", render: (row) => row.status.toUpperCase() },
     { key: "progress", header: "Progress", className: "w-[180px]", render: (row) => `${row.unique_scanned_spots}/${row.total_active_spots} spot | ${row.scan_count} scan` },
     { key: "started_at", header: "Started", className: "w-[200px]", render: (row) => formatDateTime(row.started_at) },
@@ -228,7 +232,7 @@ export default function PatrolRunReportsPage() {
     <>
       <PageHeader
         title="Laporan Patroli"
-        description="Laporan patroli per shift dan ronde. PDF memakai foto dari scan patrol."
+        description="Laporan patroli per shift dan ronde, termasuk bucket Tanpa Ronde. PDF memakai foto dari scan patrol."
         actions={
           <div className="flex items-center gap-2">
             <select
@@ -271,7 +275,7 @@ export default function PatrolRunReportsPage() {
             className="w-full rounded-xl border border-white/70 bg-white/85 px-3.5 py-3 text-[13px] text-slate-900 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)] outline-none focus:border-sky-400/60 focus:bg-white focus:ring-4 focus:ring-sky-400/15"
           >
             <option value="">Semua ronde</option>
-            {availableRounds.map((roundNo) => <option key={roundNo} value={String(roundNo)}>Ronde {roundNo}</option>)}
+            {availableRounds.map((roundNo) => <option key={roundNo} value={String(roundNo)}>{formatRunLabel(roundNo)}</option>)}
           </select>
         </label>
 

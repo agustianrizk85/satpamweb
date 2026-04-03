@@ -64,6 +64,10 @@ function formatDateTime(value: string | null | undefined): string {
   }).format(parsed).replace(/\./g, ":") + " WIB";
 }
 
+function formatRunLabel(runNo: number | null | undefined): string {
+  return Number(runNo) === 0 ? "Tanpa Ronde" : String(runNo ?? "-");
+}
+
 function toCreatePayload(state: FormState): PatrolRunCreate {
   return {
     placeId: state.placeId.trim(),
@@ -241,7 +245,7 @@ export default function PatrolRunsPage() {
   };
 
   const columns = React.useMemo<readonly MasterTableColumn<PatrolRun>[]>(() => [
-    { key: "run_no", header: "Run No", sortable: true, className: "w-[90px]" },
+    { key: "run_no", header: "Ronde", sortable: true, className: "w-[120px]", render: (row) => formatRunLabel(row.run_no) },
     { key: "user_id", header: "User", className: "w-[220px]", render: (row) => userNameById.get(row.user_id) ?? row.user_id },
     { key: "attendance_id", header: "Attendance", className: "w-[220px]", render: (row) => row.attendance_id || "-" },
     { key: "status", header: "Status", sortable: true, className: "w-[110px]", render: (row) => row.status.toUpperCase() },
@@ -274,7 +278,7 @@ export default function PatrolRunsPage() {
     <>
       <PageHeader
         title="Patrol Runs"
-        description="CRUD manual ronde patroli, lengkap dengan progres scan per run."
+        description="CRUD ronde patroli, termasuk bucket master Tanpa Ronde."
         actions={<Button onClick={openCreateForm} disabled={!placeId.trim()}>+ Create Run</Button>}
       />
 
@@ -418,7 +422,7 @@ export default function PatrolRunsPage() {
               </select>
             </label>
             <TextField label="Attendance ID" value={form.attendanceId} onChange={(e) => setForm((prev) => ({ ...prev, attendanceId: e.target.value }))} placeholder="Opsional UUID attendance" />
-            <TextField label="Run No" type="number" min={1} value={form.runNo} onChange={(e) => setForm((prev) => ({ ...prev, runNo: e.target.value }))} placeholder="Auto jika kosong" />
+            <TextField label="Ronde" type="number" min={1} value={form.runNo} onChange={(e) => setForm((prev) => ({ ...prev, runNo: e.target.value }))} placeholder="Auto jika kosong" />
             <TextField label="Total Active Spots" type="number" min={0} value={form.totalActiveSpots} onChange={(e) => setForm((prev) => ({ ...prev, totalActiveSpots: e.target.value }))} placeholder="Auto dari route aktif jika kosong" />
             <label className="block">
               <span className="mb-1 block text-[13px] font-medium text-slate-800">Status</span>
@@ -451,7 +455,7 @@ export default function PatrolRunsPage() {
               <div>User: {editing ? (userNameById.get(editing.user_id) ?? editing.user_id) : "-"}</div>
               <div>Attendance: {editing?.attendance_id || "-"}</div>
             </div>
-            <TextField label="Run No" type="number" min={1} value={form.runNo} onChange={(e) => setForm((prev) => ({ ...prev, runNo: e.target.value }))} />
+            <TextField label="Ronde" type="number" min={1} value={form.runNo} onChange={(e) => setForm((prev) => ({ ...prev, runNo: e.target.value }))} />
             <TextField label="Total Active Spots" type="number" min={0} value={form.totalActiveSpots} onChange={(e) => setForm((prev) => ({ ...prev, totalActiveSpots: e.target.value }))} />
             <label className="block">
               <span className="mb-1 block text-[13px] font-medium text-slate-800">Status</span>
@@ -481,7 +485,7 @@ export default function PatrolRunsPage() {
           <div className="space-y-2 text-sm text-slate-700">
             <div>Run ini akan dihapus bersama scan yang terhubung.</div>
             <div className="font-semibold">
-              {deleting ? `Run #${deleting.run_no} | ${userNameById.get(deleting.user_id) ?? deleting.user_id}` : ""}
+              {deleting ? `${formatRunLabel(deleting.run_no)} | ${userNameById.get(deleting.user_id) ?? deleting.user_id}` : ""}
             </div>
           </div>
         }
