@@ -255,10 +255,7 @@ export default function AdminSidebar({
         { key: "attendance", label: "Attendance", icon: <ClipboardCheck className="h-4 w-4" /> },
         { key: "visitor-log", label: "Visitor Log", icon: <ClipboardList className="h-4 w-4" /> },
         { key: "leave-requests", label: "Leave Requests", icon: <ClipboardSignature className="h-4 w-4" /> },
-        { key: "patrol", label: "Patrol", icon: <QrCode className="h-4 w-4" /> },
         { key: "patrol-round-masters", label: "Master Ronde", icon: <ClipboardList className="h-4 w-4" /> },
-        { key: "patrol-runs", label: "Patrol Runs", icon: <ClipboardList className="h-4 w-4" /> },
-        { key: "patrol-routes", label: "Patrol Routes", icon: <MapPinned className="h-4 w-4" /> },
         { key: "patrol-route-points", label: "Route Points", icon: <Route className="h-4 w-4" /> },
         { key: "patrol-scans", label: "Patrol Scans", icon: <ScanLine className="h-4 w-4" /> },
       ];
