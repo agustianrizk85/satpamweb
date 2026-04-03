@@ -351,7 +351,7 @@ export default function PatrolScansPage() {
     <>
       <PageHeader
         title="Patrol Scans"
-        description="Log scan patroli operasional. Laporan dipisah ke menu Laporan Scan."
+        description="Log master scan patroli operasional. Scan yang belum terpetakan ke ronde tetap masuk ke bucket Tanpa Ronde."
         actions={
           <div className="flex items-center gap-2">
             {canManageOperational ? <Button onClick={onClickCreate} disabled={!placeId.trim()}>+ Create</Button> : null}
@@ -402,7 +402,7 @@ export default function PatrolScansPage() {
 
         <TextField
           list="patrol-run-id-options"
-          label="Patrol Run ID (filter)"
+          label="Run ID / Bucket ID"
           value={filterRunId}
           onChange={(e) => {
             setFilterRunId(e.target.value);
@@ -510,7 +510,7 @@ export default function PatrolScansPage() {
 
             <TextField
               list="patrol-run-id-options"
-              label="Patrol Run ID"
+              label="Run ID / Bucket ID"
               value={form.patrolRunId}
               onChange={(e) => setForm((p) => ({ ...p, patrolRunId: e.target.value }))}
               placeholder="RUN-2026-03-03-001"

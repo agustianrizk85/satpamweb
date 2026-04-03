@@ -65,7 +65,7 @@ function formatDateTime(value: string | null | undefined): string {
 }
 
 function formatRunLabel(runNo: number | null | undefined): string {
-  return Number(runNo) === 0 ? "Tanpa Ronde" : String(runNo ?? "-");
+  return Number(runNo) === 0 ? "Tanpa Ronde" : `Ronde ${runNo ?? "-"}`;
 }
 
 function toCreatePayload(state: FormState): PatrolRunCreate {
@@ -247,7 +247,7 @@ export default function PatrolRunsPage() {
   const columns = React.useMemo<readonly MasterTableColumn<PatrolRun>[]>(() => [
     { key: "run_no", header: "Ronde", sortable: true, className: "w-[120px]", render: (row) => formatRunLabel(row.run_no) },
     { key: "user_id", header: "User", className: "w-[220px]", render: (row) => userNameById.get(row.user_id) ?? row.user_id },
-    { key: "attendance_id", header: "Attendance", className: "w-[220px]", render: (row) => row.attendance_id || "-" },
+    { key: "attendance_id", header: "Attendance Legacy", className: "w-[220px]", render: (row) => row.attendance_id || "-" },
     { key: "status", header: "Status", sortable: true, className: "w-[110px]", render: (row) => row.status.toUpperCase() },
     {
       key: "progress",
@@ -277,9 +277,9 @@ export default function PatrolRunsPage() {
   return (
     <>
       <PageHeader
-        title="Patrol Runs"
-        description="CRUD ronde patroli, termasuk bucket master Tanpa Ronde."
-        actions={<Button onClick={openCreateForm} disabled={!placeId.trim()}>+ Create Run</Button>}
+        title="Bucket Scan Patrol"
+        description="Halaman internal untuk melihat bucket scan patrol termasuk Tanpa Ronde. Attendance hanya tampil sebagai field legacy."
+        actions={<Button onClick={openCreateForm} disabled={!placeId.trim()}>+ Create Bucket</Button>}
       />
 
       <div className="mb-3 grid gap-3 app-glass rounded-[24px] p-3 shadow-[0_16px_34px_rgba(76,99,168,0.12)] lg:grid-cols-4">
@@ -321,13 +321,13 @@ export default function PatrolRunsPage() {
         </label>
 
         <TextField
-          label="Filter Attendance ID"
+          label="Filter Attendance Legacy"
           value={filterAttendanceId}
           onChange={(e) => {
             setFilterAttendanceId(e.target.value);
             setTableState((prev) => ({ ...prev, page: 1 }));
           }}
-          placeholder="UUID attendance"
+          placeholder="UUID attendance lama"
         />
 
         <label className="block">
@@ -357,10 +357,10 @@ export default function PatrolRunsPage() {
         ) : !placeId.trim() ? (
           <div className="app-glass rounded-[24px] p-4 text-sm text-slate-600 shadow-[0_16px_34px_rgba(76,99,168,0.12)]">Pilih place.</div>
         ) : listQuery.isLoading ? (
-          <LoadingStateCard title="Loading patrol runs..." subtitle={`Memuat ronde patroli di ${placeNameById.get(placeId) ?? "place aktif"}.`} />
+          <LoadingStateCard title="Loading patrol buckets..." subtitle={`Memuat bucket scan patrol di ${placeNameById.get(placeId) ?? "place aktif"}.`} />
         ) : listQuery.error ? (
           <div className="rounded-[24px] border border-rose-200/80 bg-rose-50/95 p-4 text-sm text-rose-700 shadow-[0_16px_34px_rgba(244,63,94,0.1)]">
-            {listQuery.error instanceof Error ? listQuery.error.message : "Gagal load patrol runs."}
+            {listQuery.error instanceof Error ? listQuery.error.message : "Gagal load bucket scan patrol."}
           </div>
         ) : (
           <MasterTable
@@ -368,7 +368,7 @@ export default function PatrolRunsPage() {
             data={rows}
             getRowKey={(row) => row.id}
             defaultPageSize={10}
-            emptyMessage="Belum ada patrol run."
+            emptyMessage="Belum ada bucket scan patrol."
             disableClientSearch
             serverPagination={{
               page: pagination.page,
@@ -401,9 +401,9 @@ export default function PatrolRunsPage() {
         open={openCreate}
         onClose={() => setOpenCreate(false)}
         onConfirm={submitCreate}
-        moduleLabel="Patrol Runs"
+        moduleLabel="Bucket Scan Patrol"
         action="create"
-        title="Create Patrol Run"
+        title="Create Bucket Scan Patrol"
         message={
           <div className="mt-4 grid gap-3">
             <label className="block">
@@ -421,7 +421,7 @@ export default function PatrolRunsPage() {
                 ))}
               </select>
             </label>
-            <TextField label="Attendance ID" value={form.attendanceId} onChange={(e) => setForm((prev) => ({ ...prev, attendanceId: e.target.value }))} placeholder="Opsional UUID attendance" />
+            <TextField label="Attendance Legacy" value={form.attendanceId} onChange={(e) => setForm((prev) => ({ ...prev, attendanceId: e.target.value }))} placeholder="Opsional UUID attendance lama" />
             <TextField label="Ronde" type="number" min={1} value={form.runNo} onChange={(e) => setForm((prev) => ({ ...prev, runNo: e.target.value }))} placeholder="Auto jika kosong" />
             <TextField label="Total Active Spots" type="number" min={0} value={form.totalActiveSpots} onChange={(e) => setForm((prev) => ({ ...prev, totalActiveSpots: e.target.value }))} placeholder="Auto dari route aktif jika kosong" />
             <label className="block">
@@ -445,15 +445,15 @@ export default function PatrolRunsPage() {
         open={Boolean(editing)}
         onClose={() => setEditing(null)}
         onConfirm={submitUpdate}
-        moduleLabel="Patrol Runs"
+        moduleLabel="Bucket Scan Patrol"
         action="edit"
-        title="Edit Patrol Run"
+        title="Edit Bucket Scan Patrol"
         message={
           <div className="mt-4 grid gap-3">
             <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
               <div>Place: {editing ? (placeNameById.get(editing.place_id) ?? editing.place_id) : "-"}</div>
               <div>User: {editing ? (userNameById.get(editing.user_id) ?? editing.user_id) : "-"}</div>
-              <div>Attendance: {editing?.attendance_id || "-"}</div>
+              <div>Attendance Legacy: {editing?.attendance_id || "-"}</div>
             </div>
             <TextField label="Ronde" type="number" min={1} value={form.runNo} onChange={(e) => setForm((prev) => ({ ...prev, runNo: e.target.value }))} />
             <TextField label="Total Active Spots" type="number" min={0} value={form.totalActiveSpots} onChange={(e) => setForm((prev) => ({ ...prev, totalActiveSpots: e.target.value }))} />
@@ -478,9 +478,9 @@ export default function PatrolRunsPage() {
         open={Boolean(deleting)}
         onClose={() => setDeleting(null)}
         onConfirm={submitDelete}
-        moduleLabel="Patrol Runs"
+        moduleLabel="Bucket Scan Patrol"
         action="delete"
-        title="Delete Patrol Run"
+        title="Delete Bucket Scan Patrol"
         message={
           <div className="space-y-2 text-sm text-slate-700">
             <div>Run ini akan dihapus bersama scan yang terhubung.</div>
@@ -493,8 +493,8 @@ export default function PatrolRunsPage() {
         cancelLabel="Cancel"
       />
 
-      <SuccessModalMaster open={successOpen} onClose={() => setSuccessOpen(false)} moduleLabel="Patrol Runs" variant="create" title="Success" message={successText} />
-      <ErrorModalMaster open={errorOpen} onClose={() => setErrorOpen(false)} moduleLabel="Patrol Runs" variant="create" title="Error" message={errorText} />
+      <SuccessModalMaster open={successOpen} onClose={() => setSuccessOpen(false)} moduleLabel="Bucket Scan Patrol" variant="create" title="Success" message={successText} />
+      <ErrorModalMaster open={errorOpen} onClose={() => setErrorOpen(false)} moduleLabel="Bucket Scan Patrol" variant="create" title="Error" message={errorText} />
     </>
   );
 }

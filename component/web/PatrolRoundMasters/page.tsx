@@ -223,7 +223,7 @@ export default function PatrolRoundMastersPage() {
     <>
       <PageHeader
         title="Master Ronde"
-        description="Nomor ronde tetap per place. User nanti mengisi transaksi scan berdasarkan master ronde ini."
+        description="Nomor ronde tetap per place. Master ini menjadi batas distribusi scan ke Ronde 1..N sebelum sisanya jatuh ke bucket Tanpa Ronde."
         actions={<Button onClick={openCreateForm} disabled={!placeId.trim()}>+ Create Ronde</Button>}
       />
 

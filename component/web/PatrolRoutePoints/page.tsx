@@ -185,8 +185,8 @@ export default function PatrolRoutePointsPage() {
   return (
     <>
       <PageHeader
-        title="Patrol Route Points"
-        description="Urutan spot patroli per place."
+        title="Route Points"
+        description="Urutan spot patroli per place. Route points ini dipakai untuk menghitung total spot, status ronde, dan spot yang belum terscan."
         actions={<Button onClick={onClickCreate} disabled={!placeId.trim()}>+ Create</Button>}
       />
 
@@ -257,7 +257,7 @@ export default function PatrolRoutePointsPage() {
         open={openForm}
         onClose={() => setOpenForm(false)}
         onConfirm={submit}
-        moduleLabel="Patrol Route Points"
+        moduleLabel="Route Points"
         action="create"
         title="Create Route Point"
         message={
@@ -301,7 +301,7 @@ export default function PatrolRoutePointsPage() {
         open={Boolean(deleteTarget)}
         onClose={() => setDeleteTarget(null)}
         onConfirm={submitDelete}
-        moduleLabel="Patrol Route Points"
+        moduleLabel="Route Points"
         action="delete"
         title="Delete Route Point"
         message={
@@ -316,8 +316,8 @@ export default function PatrolRoutePointsPage() {
         cancelLabel="Cancel"
       />
 
-      <SuccessModalMaster open={successOpen} onClose={() => setSuccessOpen(false)} moduleLabel="Patrol Route Points" variant="create" title="Success" message={successText} />
-      <ErrorModalMaster open={errorOpen} onClose={() => setErrorOpen(false)} moduleLabel="Patrol Route Points" variant="create" title="Error" message={errorText} />
+      <SuccessModalMaster open={successOpen} onClose={() => setSuccessOpen(false)} moduleLabel="Route Points" variant="create" title="Success" message={successText} />
+      <ErrorModalMaster open={errorOpen} onClose={() => setErrorOpen(false)} moduleLabel="Route Points" variant="create" title="Error" message={errorText} />
     </>
   );
 }
