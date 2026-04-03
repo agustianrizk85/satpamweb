@@ -178,6 +178,7 @@ export default function AttendancesPage() {
 
   const roleCode = String(authUser?.role ?? "").trim().toUpperCase();
   const isGuard = roleCode === "GUARD";
+  const canManageOperational = roleCode === "SUPER_ADMIN";
   const authReady = Boolean(authUser) || !needsMeFetch || Boolean(meQuery.error);
   const canLoadUsers = authReady && !isGuard;
   const ownUserId = authUser?.id != null ? String(authUser.id).trim() : "";
@@ -343,7 +344,8 @@ export default function AttendancesPage() {
     return () => stopProgressTimer();
   }, [stopProgressTimer]);
 
-  const onClickCreate = () => {
+  const onClickCreate = React.useCallback(() => {
+    if (!canManageOperational) return;
     const defPlace = filterPlaceId || placeRows[0]?.id || "";
     const defUser = effectiveFilterUserId || userRows[0]?.id || "";
     const today = filterDate || new Date().toISOString().slice(0, 10);
@@ -362,9 +364,10 @@ export default function AttendancesPage() {
       note: "",
     });
     setOpenForm(true);
-  };
+  }, [canManageOperational, effectiveFilterUserId, filterDate, filterPlaceId, placeRows, userRows]);
 
-  const onClickEdit = (r: Attendance) => {
+  const onClickEdit = React.useCallback((r: Attendance) => {
+    if (!canManageOperational) return;
     setMode("edit");
     setSelected(r);
     setForm({
@@ -379,12 +382,13 @@ export default function AttendancesPage() {
       note: r.note ?? "",
     });
     setOpenForm(true);
-  };
+  }, [canManageOperational]);
 
-  const onClickDelete = (r: Attendance) => {
+  const onClickDelete = React.useCallback((r: Attendance) => {
+    if (!canManageOperational) return;
     setSelected(r);
     setConfirmDeleteOpen(true);
-  };
+  }, [canManageOperational]);
 
   const onPickPhoto = async (target: "checkIn" | "checkOut", file: File | null) => {
     if (!file) {
@@ -408,6 +412,7 @@ export default function AttendancesPage() {
 
   const submit = async () => {
     try {
+      if (!canManageOperational) throw new Error("CRUD attendance hanya tersedia untuk super admin.");
       if (mode === "create") {
         if (!form.placeId.trim()) throw new Error("Place wajib dipilih.");
         const effectiveUserId = (isGuard ? ownUserId : form.userId).trim();
@@ -437,6 +442,7 @@ export default function AttendancesPage() {
     if (!id) return;
 
     try {
+      if (!canManageOperational) throw new Error("Delete attendance hanya tersedia untuk super admin.");
       await removeMut.mutateAsync(id);
       setConfirmDeleteOpen(false);
       setSuccessText("Attendance berhasil dihapus.");
@@ -589,23 +595,25 @@ export default function AttendancesPage() {
         },
       },
       { key: "note", header: "Note" },
-      {
-        key: "actions",
-        header: "Actions",
-        className: "w-[220px]",
-        render: (r) => (
-          <div className="flex items-center gap-2">
-            <Button variant="secondary" onClick={() => onClickEdit(r)}>
-              Edit
-            </Button>
-            <Button variant="secondary" onClick={() => onClickDelete(r)}>
-              Delete
-            </Button>
-          </div>
-        ),
-      },
+      ...(canManageOperational
+        ? [{
+            key: "actions",
+            header: "Actions",
+            className: "w-[220px]",
+            render: (r: Attendance) => (
+              <div className="flex items-center gap-2">
+                <Button variant="secondary" onClick={() => onClickEdit(r)}>
+                  Edit
+                </Button>
+                <Button variant="secondary" onClick={() => onClickDelete(r)}>
+                  Delete
+                </Button>
+              </div>
+            ),
+          } satisfies MasterTableColumn<Attendance>]
+        : []),
     ];
-  }, [placeNameById, userNameById]);
+  }, [canManageOperational, onClickDelete, onClickEdit, placeNameById, userNameById]);
 
   const authLoading = needsMeFetch && meQuery.isLoading;
   const authError = meQuery.error;
@@ -628,7 +636,7 @@ export default function AttendancesPage() {
             <Button variant="secondary" onClick={onDownloadReport} disabled={isDownloadingReport}>
               {isDownloadingReport ? "Downloading..." : reportFormat === "pdf" ? "Download PDF" : "Download CSV"}
             </Button>
-            <Button onClick={onClickCreate}>+ Create</Button>
+            {canManageOperational ? <Button onClick={onClickCreate}>+ Create</Button> : null}
           </div>
         }
       />

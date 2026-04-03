@@ -11,6 +11,8 @@ import { ConfirmModalMaster, ErrorModalMaster, SuccessModalMaster } from "@/comp
 
 import type { Place } from "@/repository/Places";
 import { placeHooks } from "@/repository/Places";
+import type { MeResponse } from "@/repository/auth";
+import { me as getMe } from "@/repository/auth";
 import type { AttendanceConfig, AttendanceConfigUpsert } from "@/repository/attendance-config";
 import { getAttendanceConfig, upsertAttendanceConfig } from "@/repository/attendance-config";
 
@@ -46,6 +48,29 @@ function toUpsertPayload(s: FormState): AttendanceConfigUpsert {
 
 export default function AttendanceConfigPage() {
   const qc = useQueryClient();
+  const authUserFromStorage = React.useMemo(() => {
+    if (typeof window === "undefined") return null;
+    const parseFrom = (storage: Storage) => {
+      const raw = storage.getItem("authUser");
+      if (!raw) return null;
+      try {
+        return JSON.parse(raw) as { role?: string } | null;
+      } catch {
+        return null;
+      }
+    };
+    return parseFrom(window.localStorage) ?? parseFrom(window.sessionStorage);
+  }, []);
+  const needsMeFetch = !authUserFromStorage;
+  const meQuery = useQuery({
+    queryKey: ["satpam-auth-me-attendance-config"],
+    queryFn: async () => getMe(),
+    enabled: needsMeFetch,
+  });
+  const roleCode = String(
+    authUserFromStorage?.role ?? (meQuery.data as MeResponse | undefined)?.role ?? "",
+  ).trim().toUpperCase();
+  const canManageOperational = roleCode === "SUPER_ADMIN";
   const places = placeHooks.useList({});
   const placeRows = React.useMemo(() => (places.data ?? []) as Place[], [places.data]);
 
@@ -87,6 +112,7 @@ export default function AttendanceConfigPage() {
   const [successText, setSuccessText] = React.useState("Berhasil.");
 
   const openEdit = (cfg: AttendanceConfig | null) => {
+    if (!canManageOperational) return;
     const currentPlace = placeId.trim();
     setForm({
       placeId: currentPlace,
@@ -101,6 +127,7 @@ export default function AttendanceConfigPage() {
 
   const submit = async () => {
     try {
+      if (!canManageOperational) throw new Error("CRUD attendance config hanya tersedia untuk super admin.");
       if (!form.placeId.trim()) throw new Error("Place wajib dipilih.");
       await saveMut.mutateAsync(toUpsertPayload(form));
       setOpenForm(false);
@@ -123,12 +150,14 @@ export default function AttendanceConfigPage() {
         title="Attendance Config"
         description="Pengaturan radius & lokasi absensi per place."
         actions={
-          <Button
-            onClick={() => openEdit(configQuery.data ?? null)}
-            disabled={!placeId.trim() || configQuery.isLoading}
-          >
-            Edit
-          </Button>
+          canManageOperational ? (
+            <Button
+              onClick={() => openEdit(configQuery.data ?? null)}
+              disabled={!placeId.trim() || configQuery.isLoading}
+            >
+              Edit
+            </Button>
+          ) : null
         }
       />
 

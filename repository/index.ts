@@ -14,6 +14,7 @@ export * as attendanceConfig from "./attendance-config";
 export * as tokenConfig from "./token-config";
 export * as patrolscan from "./patrol-scans";
 export * as patrolRoutePoints from "./patrol-route-points";
+export * as patrolRoundMasters from "./patrol-round-masters";
 export * as leaveRequests from "./leave-requests";
 export * as facilityCheckTemplates from "./facility-spots";
 export * as facilityCheckItems from "./facility-items";

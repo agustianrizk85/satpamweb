@@ -37,10 +37,13 @@ type AdminMenuKey =
   | "attendance-config"
   | "token-config"
   | "patrol"
+  | "patrol-round-masters"
   | "patrol-runs"
   | "patrol-routes"
   | "patrol-route-points"
   | "patrol-scans"
+  | "patrol-scan-reports"
+  | "patrol-run-reports"
   | "leave-requests"
   | "facility-spots"
   | "facility-items"
@@ -62,10 +65,13 @@ const ROUTE_BY_KEY: Record<AdminMenuKey, string> = {
   "attendance-config": "/web/attendance-config",
   "token-config": "/web/token-config",
   patrol: "/web/patrol",
+  "patrol-round-masters": "/web/patrol-round-masters",
   "patrol-runs": "/web/patrol-runs",
   "patrol-routes": "/web/patrol-routes",
   "patrol-route-points": "/web/patrol-route-points",
   "patrol-scans": "/web/patrol-scans",
+  "patrol-scan-reports": "/web/patrol-scan-reports",
+  "patrol-run-reports": "/web/patrol-run-reports",
   "leave-requests": "/web/leave-requests",
   "facility-spots": "/web/facility-spots",
   "facility-items": "/web/facility-items",
@@ -210,6 +216,14 @@ export default function AdminSidebar({
             ],
           },
           {
+            label: "Laporan",
+            icon: <FileCheck2 className="h-4 w-4" />,
+            children: [
+              { key: "patrol-scan-reports", label: "Laporan Scan", icon: <FileCheck2 className="h-4 w-4" /> },
+              { key: "patrol-run-reports", label: "Laporan Patroli", icon: <ClipboardList className="h-4 w-4" /> },
+            ],
+          },
+          {
             label: "Facility",
             icon: <Wrench className="h-4 w-4" />,
             children: [{ key: "facility-scans", label: "Facility Scans", icon: <ScanLine className="h-4 w-4" /> }],
@@ -242,6 +256,7 @@ export default function AdminSidebar({
         { key: "visitor-log", label: "Visitor Log", icon: <ClipboardList className="h-4 w-4" /> },
         { key: "leave-requests", label: "Leave Requests", icon: <ClipboardSignature className="h-4 w-4" /> },
         { key: "patrol", label: "Patrol", icon: <QrCode className="h-4 w-4" /> },
+        { key: "patrol-round-masters", label: "Master Ronde", icon: <ClipboardList className="h-4 w-4" /> },
         { key: "patrol-runs", label: "Patrol Runs", icon: <ClipboardList className="h-4 w-4" /> },
         { key: "patrol-routes", label: "Patrol Routes", icon: <MapPinned className="h-4 w-4" /> },
         { key: "patrol-route-points", label: "Route Points", icon: <Route className="h-4 w-4" /> },
@@ -264,6 +279,14 @@ export default function AdminSidebar({
           label: "Operasional",
           icon: <ClipboardCheck className="h-4 w-4" />,
           children: operationalChildren,
+        },
+        {
+          label: "Laporan",
+          icon: <FileCheck2 className="h-4 w-4" />,
+          children: [
+            { key: "patrol-scan-reports", label: "Laporan Scan", icon: <FileCheck2 className="h-4 w-4" /> },
+            { key: "patrol-run-reports", label: "Laporan Patroli", icon: <ClipboardList className="h-4 w-4" /> },
+          ],
         },
         {
           label: "Facility",

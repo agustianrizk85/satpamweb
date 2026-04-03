@@ -147,6 +147,7 @@ export default function FacilityScansPage() {
 
   const roleCode = String(authUser?.role ?? "").trim().toUpperCase();
   const isGuard = roleCode === "GUARD";
+  const canManageOperational = roleCode === "SUPER_ADMIN";
   const authReady = Boolean(authUser) || !needsMeFetch || Boolean(meQuery.error);
   const canLoadUsers = authReady && !isGuard;
   const ownUserId = authUser?.id != null ? String(authUser.id).trim() : "";
@@ -347,6 +348,7 @@ export default function FacilityScansPage() {
   const [isDownloadingReport, setIsDownloadingReport] = React.useState(false);
 
   const onClickCreate = () => {
+    if (!canManageOperational) return;
     const defSpot = filterSpotId || facilitySpots[0]?.id || "";
     const defUser = (isGuard ? ownUserId : filterUserId) || userRows[0]?.id || "";
     setForm({ spotId: defSpot, itemId: "", userId: defUser, status: "OK", note: "", scannedAt: "" });
@@ -355,6 +357,7 @@ export default function FacilityScansPage() {
 
   const submit = async () => {
     try {
+      if (!canManageOperational) throw new Error("CRUD facility scan hanya tersedia untuk super admin.");
       if (!placeId.trim()) throw new Error("Place wajib dipilih.");
       if (!form.spotId.trim()) throw new Error("Spot wajib dipilih.");
       if (!form.itemId.trim()) throw new Error("Item wajib dipilih.");
@@ -428,9 +431,11 @@ export default function FacilityScansPage() {
             <Button variant="secondary" onClick={onDownloadReport} disabled={!placeId.trim() || isDownloadingReport}>
               {isDownloadingReport ? "Downloading..." : "Download CSV"}
             </Button>
-            <Button onClick={onClickCreate} disabled={!placeId.trim()}>
-              + Create
-            </Button>
+            {canManageOperational ? (
+              <Button onClick={onClickCreate} disabled={!placeId.trim()}>
+                + Create
+              </Button>
+            ) : null}
           </div>
         }
       />
@@ -603,7 +608,7 @@ export default function FacilityScansPage() {
               <select
                 value={form.userId}
                 onChange={(e) => setForm((p) => ({ ...p, userId: e.target.value }))}
-                disabled={isGuard}
+                disabled={isGuard || !canManageOperational}
                 className="w-full rounded-xl border border-white/70 bg-white/85 px-3.5 py-3 text-[13px] text-slate-900 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)] outline-none focus:border-sky-400/60 focus:bg-white focus:ring-4 focus:ring-sky-400/15"
               >
                 {!isGuard ? <option value="">Pilih user</option> : null}

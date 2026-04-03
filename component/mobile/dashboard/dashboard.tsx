@@ -280,7 +280,7 @@ export default function DashboardPage() {
   const closedFacilityPatrol = String(recentActivitySummary.patrol_facility_today);
   const activeFacilityItems = String(recentActivitySummary.facility_active);
   const activeSpots = String(recentActivitySummary.spot_active || recentActivitySummary.point_active);
-  const totalActivityMonth = String(recentActivitySummary.total_month);
+  const patrolMonthCount = String(recentActivitySummary.patrol_spot_month);
 
   const dataError =
     meQuery.error ??
@@ -636,8 +636,8 @@ export default function DashboardPage() {
                 <div className="mt-1 text-[14px] font-black text-slate-900">{activeFacilityItems}</div>
               </button>
               <div className="rounded-[14px] border border-slate-200 bg-white px-3 py-2">
-                <div className="text-[11px] font-extrabold text-slate-500">Aktivitas Bulan Ini</div>
-                <div className="mt-1 text-[14px] font-black text-slate-900">{totalActivityMonth}</div>
+                <div className="text-[11px] font-extrabold text-slate-500">Patroli Bulan Ini</div>
+                <div className="mt-1 text-[14px] font-black text-slate-900">{patrolMonthCount}</div>
               </div>
             </div>
           </div>

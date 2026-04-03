@@ -8,8 +8,6 @@ import PageHeader from "@/component/ui/PageHeader";
 import MasterTable, { type MasterTableColumn } from "@/component/ui/MasterTable";
 import Button from "@/component/ui/Button";
 import TextField from "@/component/ui/TextField";
-import DateHighlightField from "@/component/ui/DateHighlightField";
-import DownloadProgressModal from "@/component/ui/DownloadProgressModal";
 import LoadingStateCard from "@/component/ui/LoadingStateCard";
 import { ConfirmModalMaster, ErrorModalMaster, SuccessModalMaster } from "@/component/ui/layout/ModalMaster";
 import { estimateDataUrlSizeBytes, formatBytesToKB } from "@/libs/image";
@@ -24,13 +22,9 @@ import type { MeResponse } from "@/repository/auth";
 import { me as getMe } from "@/repository/auth";
 import type { Spot } from "@/repository/Spots";
 import { spotHooks } from "@/repository/Spots";
-import type { Shift } from "@/repository/Shifts";
-import { shiftHooks } from "@/repository/Shifts";
 
 import type { PatrolScan, PatrolScanCreate } from "@/repository/patrol-scans";
 import { createPatrolScan, listPatrolScans } from "@/repository/patrol-scans";
-import { downloadPatrolScanReportCsv, listPatrolScanReportDates, listPatrolScanReportRounds } from "@/repository/reports";
-import type { ReportDownloadFormat } from "@/repository/reports";
 
 type FormState = {
   spotId: string;
@@ -98,17 +92,6 @@ function readFileAsDataUrl(file: File): Promise<string> {
   });
 }
 
-function toDateOnly(value: string | null | undefined): string {
-  const raw = String(value ?? "").trim();
-  if (!raw) return "";
-  const direct = raw.match(/^\d{4}-\d{2}-\d{2}/);
-  if (direct?.[0]) return direct[0];
-
-  const parsed = new Date(raw);
-  if (Number.isNaN(parsed.getTime())) return "";
-  return parsed.toISOString().slice(0, 10);
-}
-
 function formatPatrolScanDateTime(value: string | null | undefined): string {
   const raw = String(value ?? "").trim();
   if (!raw) return "-";
@@ -153,6 +136,7 @@ export default function PatrolScansPage() {
 
   const roleCode = String(authUser?.role ?? "").trim().toUpperCase();
   const isGuard = roleCode === "GUARD";
+  const canManageOperational = roleCode === "SUPER_ADMIN";
   const authReady = Boolean(authUser) || !needsMeFetch || Boolean(meQuery.error);
   const canLoadUsers = authReady && !isGuard;
   const ownUserId = authUser?.id != null ? String(authUser.id).trim() : "";
@@ -162,11 +146,6 @@ export default function PatrolScansPage() {
   const [placeId, setPlaceId] = React.useState("");
   const [filterUserId, setFilterUserId] = React.useState("");
   const [filterRunId, setFilterRunId] = React.useState("");
-  const [reportShiftId, setReportShiftId] = React.useState("");
-  const [reportRoundNo, setReportRoundNo] = React.useState("");
-  const [reportFromDate, setReportFromDate] = React.useState("");
-  const [reportToDate, setReportToDate] = React.useState("");
-  const [reportCalendarMonth, setReportCalendarMonth] = React.useState(() => toDateOnly(new Date().toISOString()).slice(0, 7));
   const [tableState, setTableState] = React.useState<{
     page: number;
     pageSize: number;
@@ -183,7 +162,6 @@ export default function PatrolScansPage() {
   const places = placeHooks.useList({});
   const users = userHooks.useList({}, { enabled: canLoadUsers });
   const spots = spotHooks.useList({ placeId: placeId.trim() ? placeId.trim() : undefined }, { enabled: Boolean(placeId.trim()) });
-  const shifts = shiftHooks.useList({});
 
   const placeRows = React.useMemo(() => (places.data ?? []) as Place[], [places.data]);
   const userRows = React.useMemo(() => {
@@ -202,7 +180,6 @@ export default function PatrolScansPage() {
     ];
   }, [authUser?.fullName, authUser?.username, isGuard, ownUserId, users.data]);
   const spotRows = React.useMemo(() => (spots.data ?? []) as Spot[], [spots.data]);
-  const shiftRows = React.useMemo(() => ((shifts.data ?? []) as Shift[]).filter((s) => !placeId.trim() || s.place_id === placeId.trim()), [placeId, shifts.data]);
 
   React.useEffect(() => {
     if (placeId.trim()) return;
@@ -268,56 +245,6 @@ export default function PatrolScansPage() {
     const ids = rows.map((r) => r.patrol_run_id).filter((v): v is string => Boolean(v && v.trim()));
     return Array.from(new Set(ids)).sort((a, b) => a.localeCompare(b));
   }, [rows]);
-  const reportMonthDatesQuery = useQuery({
-    queryKey: ["satpam-patrol-report-dates", placeId, reportCalendarMonth],
-    queryFn: async () => listPatrolScanReportDates({ placeId: placeId.trim(), month: reportCalendarMonth }),
-    enabled: Boolean(placeId.trim()),
-  });
-  const availableReportDateRange = React.useMemo(() => ({
-    min: reportMonthDatesQuery.data?.min_date ?? "",
-    max: reportMonthDatesQuery.data?.max_date ?? "",
-  }), [reportMonthDatesQuery.data?.max_date, reportMonthDatesQuery.data?.min_date]);
-  const reportRunOptionsQuery = useQuery({
-    queryKey: ["satpam-patrol-report-run-options", placeId, effectiveFilterUserId, reportShiftId, reportFromDate, reportToDate, availableReportDateRange.min, availableReportDateRange.max],
-    queryFn: async () =>
-      listPatrolScanReportRounds({
-        placeId: placeId.trim(),
-        userId: effectiveFilterUserId || undefined,
-        shiftId: reportShiftId.trim() || undefined,
-        fromDate: reportFromDate.trim() || availableReportDateRange.min || undefined,
-        toDate: reportToDate.trim() || availableReportDateRange.max || undefined,
-      }),
-    enabled: Boolean(placeId.trim() && reportShiftId.trim()),
-  });
-  const availableReportDates = React.useMemo(() => {
-    return Array.from(new Set((reportMonthDatesQuery.data?.dates ?? []).map((date) => toDateOnly(date)).filter(Boolean))).sort();
-  }, [reportMonthDatesQuery.data?.dates]);
-  const availableReportRounds = React.useMemo(() => {
-    const runs = reportRunOptionsQuery.data ?? [];
-    const roundNos = runs
-      .map((run) => run.round_no)
-      .filter((value) => Number.isFinite(value) && value > 0);
-    return Array.from(new Set(roundNos)).sort((a, b) => a - b);
-  }, [reportRunOptionsQuery.data]);
-
-  React.useEffect(() => {
-    if (!availableReportDateRange.min || !availableReportDateRange.max) return;
-    setReportFromDate((prev) => (prev.trim() ? prev : availableReportDateRange.min));
-    setReportToDate((prev) => (prev.trim() ? prev : availableReportDateRange.max));
-  }, [availableReportDateRange.max, availableReportDateRange.min]);
-
-  React.useEffect(() => {
-    if (!reportRoundNo.trim()) return;
-    if (availableReportRounds.includes(Number(reportRoundNo))) return;
-    setReportRoundNo("");
-  }, [availableReportRounds, reportRoundNo]);
-
-  React.useEffect(() => {
-    setReportFromDate("");
-    setReportToDate("");
-    setReportShiftId("");
-    setReportRoundNo("");
-  }, [placeId]);
 
   const userLabelById = React.useMemo(() => {
     const m = new Map<string, string>();
@@ -339,26 +266,9 @@ export default function PatrolScansPage() {
   const [successText, setSuccessText] = React.useState("Berhasil.");
   const [errorText, setErrorText] = React.useState("Terjadi kesalahan.");
   const [previewPhotoUrl, setPreviewPhotoUrl] = React.useState<string | null>(null);
-  const [isDownloadingReport, setIsDownloadingReport] = React.useState(false);
-  const [downloadProgressOpen, setDownloadProgressOpen] = React.useState(false);
-  const [downloadProgressPercent, setDownloadProgressPercent] = React.useState(0);
-  const [downloadLoadedBytes, setDownloadLoadedBytes] = React.useState(0);
-  const [downloadTotalBytes, setDownloadTotalBytes] = React.useState<number | null>(null);
-  const [reportFormat, setReportFormat] = React.useState<ReportDownloadFormat>("csv");
-  const progressTimerRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
-  const transferStartedRef = React.useRef(false);
-
-  const stopProgressTimer = React.useCallback(() => {
-    if (!progressTimerRef.current) return;
-    clearInterval(progressTimerRef.current);
-    progressTimerRef.current = null;
-  }, []);
-
-  React.useEffect(() => {
-    return () => stopProgressTimer();
-  }, [stopProgressTimer]);
 
   const onClickCreate = () => {
+    if (!canManageOperational) return;
     const defSpot = filteredSpots[0]?.id ?? "";
     const defUser = effectiveFilterUserId || userRows[0]?.id || "";
     setForm({ spotId: defSpot, userId: defUser, patrolRunId: filterRunId || "", photoUrl: "", note: "" });
@@ -381,6 +291,7 @@ export default function PatrolScansPage() {
 
   const submit = async () => {
     try {
+      if (!canManageOperational) throw new Error("CRUD patrol scan hanya tersedia untuk super admin.");
       if (!placeId.trim()) throw new Error("Place wajib dipilih.");
       if (!form.spotId.trim()) throw new Error("Spot wajib dipilih.");
       const effectiveUserId = (isGuard ? ownUserId : form.userId).trim();
@@ -394,92 +305,6 @@ export default function PatrolScansPage() {
     } catch (e) {
       setErrorText(e instanceof Error ? e.message : "Gagal menyimpan data.");
       setErrorOpen(true);
-    }
-  };
-
-  const onDownloadReport = async () => {
-    const trackPdfProgress = reportFormat === "pdf";
-    try {
-      const resolvedFrom = reportFromDate.trim() || availableReportDateRange.min;
-      const resolvedTo = reportToDate.trim() || availableReportDateRange.max || resolvedFrom;
-      const missingFields: string[] = [];
-      if (!placeId.trim()) missingFields.push("Place");
-      if (!reportShiftId.trim()) missingFields.push("Shift");
-      if (!resolvedFrom) missingFields.push("From Date");
-      if (!resolvedTo) missingFields.push("To Date");
-      if (missingFields.length > 0) {
-        throw new Error(`Silahkan isi terlebih dahulu: ${missingFields.join(", ")}.`);
-      }
-      setIsDownloadingReport(true);
-      if (trackPdfProgress) {
-        transferStartedRef.current = false;
-        setDownloadProgressPercent(1);
-        setDownloadLoadedBytes(0);
-        setDownloadTotalBytes(null);
-        setDownloadProgressOpen(true);
-        stopProgressTimer();
-        progressTimerRef.current = setInterval(() => {
-          if (transferStartedRef.current) return;
-          setDownloadProgressPercent((prev) => {
-            if (prev >= 84) return prev;
-            if (prev < 24) return prev + 4;
-            if (prev < 56) return prev + 2;
-            return prev + 1;
-          });
-        }, 240);
-      }
-
-      const resolvedRoundNo = reportRoundNo.trim();
-      if (resolvedFrom && resolvedTo && resolvedFrom > resolvedTo) {
-        throw new Error("From Date tidak boleh lebih besar dari To Date.");
-      }
-      if (resolvedRoundNo && (!/^\d+$/.test(resolvedRoundNo) || Number(resolvedRoundNo) <= 0)) {
-        throw new Error("Ronde harus berupa angka lebih dari 0.");
-      }
-
-      await downloadPatrolScanReportCsv(
-        {
-          placeId: placeId.trim(),
-          userId: effectiveFilterUserId || undefined,
-          shiftId: reportShiftId.trim() || undefined,
-          patrolRunId: filterRunId.trim() ? filterRunId.trim() : undefined,
-          roundNo: resolvedRoundNo ? Number(resolvedRoundNo) : undefined,
-          fromDate: resolvedFrom || undefined,
-          toDate: resolvedTo || undefined,
-        },
-        reportFormat,
-        trackPdfProgress
-          ? {
-              onProgress: (progress) => {
-                if (progress.loadedBytes > 0) {
-                  transferStartedRef.current = true;
-                  stopProgressTimer();
-                }
-                setDownloadProgressPercent((prev) => Math.max(prev, progress.percent));
-                setDownloadLoadedBytes(progress.loadedBytes);
-                setDownloadTotalBytes(progress.totalBytes);
-              },
-            }
-          : undefined,
-      );
-      if (trackPdfProgress) {
-        stopProgressTimer();
-        setDownloadProgressPercent(100);
-        await new Promise((resolve) => setTimeout(resolve, 240));
-        setDownloadProgressOpen(false);
-      }
-      setSuccessText(reportFormat === "pdf" ? "PDF report patrol scan berhasil diunduh." : "CSV report patrol scan berhasil diunduh.");
-      setSuccessOpen(true);
-    } catch (e) {
-      if (trackPdfProgress) {
-        stopProgressTimer();
-        setDownloadProgressOpen(false);
-      }
-      setErrorText(e instanceof Error ? e.message : "Gagal download report patrol scan.");
-      setErrorOpen(true);
-    } finally {
-      stopProgressTimer();
-      setIsDownloadingReport(false);
     }
   };
 
@@ -526,28 +351,15 @@ export default function PatrolScansPage() {
     <>
       <PageHeader
         title="Patrol Scans"
-        description="Log scan patroli per place."
+        description="Log scan patroli operasional. Laporan dipisah ke menu Laporan Scan."
         actions={
           <div className="flex items-center gap-2">
-            <select
-              value={reportFormat}
-              onChange={(e) => setReportFormat(e.target.value as ReportDownloadFormat)}
-              className="rounded-lg border border-transparent bg-slate-100 px-3 py-2 text-[13px] text-slate-900 focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-            >
-              <option value="csv">CSV biasa</option>
-              <option value="pdf">PDF + Gambar</option>
-            </select>
-            <Button variant="secondary" onClick={onDownloadReport} disabled={!placeId.trim() || isDownloadingReport}>
-              {isDownloadingReport ? "Downloading..." : reportFormat === "pdf" ? "Download PDF" : "Download CSV"}
-            </Button>
-            <Button onClick={onClickCreate} disabled={!placeId.trim()}>
-              + Create
-            </Button>
+            {canManageOperational ? <Button onClick={onClickCreate} disabled={!placeId.trim()}>+ Create</Button> : null}
           </div>
         }
       />
 
-      <div className="mb-3 grid gap-3 app-glass rounded-[24px] p-3 shadow-[0_16px_34px_rgba(76,99,168,0.12)] sm:grid-cols-7">
+      <div className="mb-3 grid gap-3 app-glass rounded-[24px] p-3 shadow-[0_16px_34px_rgba(76,99,168,0.12)] sm:grid-cols-3">
         <label className="block">
           <span className="mb-1 block text-[13px] font-medium text-slate-800">Place</span>
           <select
@@ -598,60 +410,6 @@ export default function PatrolScansPage() {
           }}
           placeholder="RUN-2026-03-03-001"
         />
-
-        <label className="block">
-          <span className="mb-1 block text-[13px] font-medium text-slate-800">Shift</span>
-          <select
-            value={reportShiftId}
-            onChange={(e) => setReportShiftId(e.target.value)}
-            disabled={!placeId.trim()}
-            className="w-full rounded-xl border border-white/70 bg-white/85 px-3.5 py-3 text-[13px] text-slate-900 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)] outline-none focus:border-sky-400/60 focus:bg-white focus:ring-4 focus:ring-sky-400/15"
-          >
-            <option value="">All</option>
-            {shiftRows.map((shift) => (
-              <option key={shift.id} value={shift.id}>
-                {shift.name} ({shift.start_time} - {shift.end_time})
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <DateHighlightField
-          label="From Date"
-          value={reportFromDate}
-          min={availableReportDateRange.min || undefined}
-          max={reportToDate.trim() || availableReportDateRange.max || undefined}
-          availableDates={availableReportDates}
-          onVisibleMonthChange={setReportCalendarMonth}
-          onChange={setReportFromDate}
-        />
-
-        <DateHighlightField
-          label="To Date"
-          value={reportToDate}
-          min={reportFromDate.trim() || availableReportDateRange.min || undefined}
-          max={availableReportDateRange.max || undefined}
-          availableDates={availableReportDates}
-          onVisibleMonthChange={setReportCalendarMonth}
-          onChange={setReportToDate}
-        />
-
-        <label className="block">
-          <span className="mb-1 block text-[13px] font-medium text-slate-800">Ronde</span>
-          <select
-            value={reportRoundNo}
-            onChange={(e) => setReportRoundNo(e.target.value)}
-            disabled={!placeId.trim() || !reportShiftId.trim() || !reportFromDate.trim() || !reportToDate.trim()}
-            className="w-full rounded-xl border border-white/70 bg-white/85 px-3.5 py-3 text-[13px] text-slate-900 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)] outline-none focus:border-sky-400/60 focus:bg-white focus:ring-4 focus:ring-sky-400/15"
-          >
-            <option value="">All</option>
-            {availableReportRounds.map((roundNo) => (
-              <option key={roundNo} value={String(roundNo)}>
-                Ronde {roundNo}
-              </option>
-            ))}
-          </select>
-        </label>
       </div>
       <datalist id="patrol-run-id-options">
         {knownRunIds.map((runId) => (
@@ -738,7 +496,7 @@ export default function PatrolScansPage() {
               <select
                 value={form.userId}
                 onChange={(e) => setForm((p) => ({ ...p, userId: e.target.value }))}
-                disabled={isGuard}
+                disabled={isGuard || !canManageOperational}
                 className="w-full rounded-xl border border-white/70 bg-white/85 px-3.5 py-3 text-[13px] text-slate-900 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)] outline-none focus:border-sky-400/60 focus:bg-white focus:ring-4 focus:ring-sky-400/15"
               >
                 {!isGuard ? <option value="">Pilih user</option> : null}
@@ -785,14 +543,6 @@ export default function PatrolScansPage() {
 
       <SuccessModalMaster open={successOpen} onClose={() => setSuccessOpen(false)} moduleLabel="Patrol Scans" variant="create" title="Success" message={successText} />
       <ErrorModalMaster open={errorOpen} onClose={() => setErrorOpen(false)} moduleLabel="Patrol Scans" variant="create" title="Error" message={errorText} />
-      <DownloadProgressModal
-        open={downloadProgressOpen}
-        percent={downloadProgressPercent}
-        title="Downloading PDF Patrol"
-        subtitle="Laporan sedang diunduh. Mohon tunggu..."
-        loadedBytes={downloadLoadedBytes}
-        totalBytes={downloadTotalBytes}
-      />
 
       {previewPhotoUrl ? (
         <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/70 p-4" onClick={() => setPreviewPhotoUrl(null)}>

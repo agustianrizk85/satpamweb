@@ -10,6 +10,7 @@ export type PatrolRunListParams = {
   userId?: string;
   attendanceId?: string;
   shiftId?: string;
+  runNo?: number;
   status?: string;
   fromDate?: string;
   toDate?: string;
