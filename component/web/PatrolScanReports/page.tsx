@@ -217,7 +217,6 @@ export default function PatrolScanReportsPage() {
       const resolvedTo = reportToDate.trim() || availableReportDateRange.max || resolvedFrom;
       const missingFields: string[] = [];
       if (!placeId.trim()) missingFields.push("Place");
-      if (!reportShiftId.trim()) missingFields.push("Shift");
       if (!resolvedFrom) missingFields.push("From Date");
       if (!resolvedTo) missingFields.push("To Date");
       if (missingFields.length > 0) throw new Error(`Silahkan isi terlebih dahulu: ${missingFields.join(", ")}.`);
