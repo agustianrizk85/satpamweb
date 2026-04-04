@@ -20,7 +20,6 @@ import { listPatrolRuns } from "@/repository/patrol-runs/services";
 import {
   downloadPatrolScanReportCsv,
   listPatrolScanReportDates,
-  listPatrolScanReportRounds,
 } from "@/repository/reports";
 import type { ReportDownloadFormat } from "@/repository/reports";
 
@@ -108,18 +107,22 @@ export default function PatrolRunReportsPage() {
   const runOptionsQuery = useQuery({
     queryKey: ["satpam-patrol-run-report-round-options", placeId, filterShiftId, fromDate, toDate],
     queryFn: async () =>
-      listPatrolScanReportRounds({
+      listPatrolRuns({
         placeId: placeId.trim(),
         shiftId: filterShiftId.trim() || undefined,
         fromDate: fromDate.trim() || availableReportDateRange.min || undefined,
         toDate: toDate.trim() || availableReportDateRange.max || undefined,
+        page: 1,
+        pageSize: 200,
+        sortBy: "runNo",
+        sortOrder: "asc",
       }),
-    enabled: Boolean(placeId.trim() && filterShiftId.trim()),
+    enabled: Boolean(placeId.trim()),
   });
   const availableRounds = React.useMemo(() => {
     const roundNos = (runOptionsQuery.data ?? [])
-      .map((run) => run.round_no)
-      .filter((value) => Number.isFinite(value) && value >= 0);
+      .map((run) => run.run_no)
+      .filter((value) => Number.isFinite(value) && value > 0);
     return Array.from(new Set(roundNos)).sort((a, b) => a - b);
   }, [runOptionsQuery.data]);
 
@@ -139,7 +142,7 @@ export default function PatrolRunReportsPage() {
         fromDate: fromDate.trim() || undefined,
         toDate: toDate.trim() || undefined,
         page: 1,
-        pageSize: 10,
+        pageSize: 100,
         sortBy: "startedAt",
         sortOrder: "desc",
       }),
@@ -222,8 +225,10 @@ export default function PatrolRunReportsPage() {
 
   const columns = React.useMemo<readonly MasterTableColumn<PatrolRun>[]>(() => [
     { key: "run_no", header: "Ronde", className: "w-[140px]", render: (row) => formatRunLabel(row.run_no) },
+    { key: "id", header: "Run ID", className: "min-w-[220px]" },
     { key: "status", header: "Status", className: "w-[120px]", render: (row) => row.status.toUpperCase() },
     { key: "progress", header: "Progress", className: "w-[180px]", render: (row) => `${row.unique_scanned_spots}/${row.total_active_spots} spot | ${row.scan_count} scan` },
+    { key: "user_id", header: "User ID", className: "min-w-[220px]" },
     { key: "started_at", header: "Started", className: "w-[200px]", render: (row) => formatDateTime(row.started_at) },
     { key: "completed_at", header: "Completed", className: "w-[200px]", render: (row) => formatDateTime(row.completed_at) },
   ], []);
@@ -232,7 +237,7 @@ export default function PatrolRunReportsPage() {
     <>
       <PageHeader
         title="Laporan Patroli"
-        description="Laporan patroli per shift dan ronde, termasuk bucket Tanpa Ronde. PDF memakai foto dari scan patrol."
+        description="Laporan ronde patroli berbasis patrol run. Tabel utama memakai data ronde dari backend, sedangkan download PDF/CSV tetap memakai detail scan per ronde."
         actions={
           <div className="flex items-center gap-2">
             <select
@@ -271,7 +276,7 @@ export default function PatrolRunReportsPage() {
           <select
             value={filterRunNo}
             onChange={(e) => setFilterRunNo(e.target.value)}
-            disabled={!placeId.trim() || !filterShiftId.trim() || !fromDate.trim() || !toDate.trim()}
+            disabled={!placeId.trim() || !fromDate.trim() || !toDate.trim()}
             className="w-full rounded-xl border border-white/70 bg-white/85 px-3.5 py-3 text-[13px] text-slate-900 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)] outline-none focus:border-sky-400/60 focus:bg-white focus:ring-4 focus:ring-sky-400/15"
           >
             <option value="">Semua ronde</option>
@@ -293,7 +298,7 @@ export default function PatrolRunReportsPage() {
             {listQuery.error instanceof Error ? listQuery.error.message : "Gagal load laporan patroli."}
           </div>
         ) : (
-          <MasterTable columns={columns} data={rows} getRowKey={(row) => row.id} defaultPageSize={10} emptyMessage="Belum ada data laporan patroli." />
+          <MasterTable columns={columns} data={rows} getRowKey={(row) => row.id} defaultPageSize={20} emptyMessage="Belum ada data laporan patroli." />
         )}
       </div>
 
