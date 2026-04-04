@@ -33,20 +33,21 @@ export type AttendanceReportSummary = {
 };
 
 export type PatrolScanReportRow = {
+  id: string;
   place_id: string;
   place_name: string;
   spot_id: string;
   spot_code: string;
   spot_name: string;
   spot_status: string;
-  total_scans: number;
-  total_rounds: number;
-  last_scanned_at: string;
-  last_user_id: string;
-  last_user_name: string;
-  last_patrol_run_id: string;
+  shift_id: string | null;
+  shift_name: string | null;
+  scanned_at: string;
+  user_id: string;
+  user_name: string;
+  patrol_run_id: string;
   photo_url: string | null;
-  last_note: string | null;
+  note: string | null;
 };
 
 export type PatrolScanReportSummary = {

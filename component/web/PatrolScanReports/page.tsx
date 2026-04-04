@@ -273,10 +273,10 @@ export default function PatrolScanReportsPage() {
 
   const columns = React.useMemo<readonly MasterTableColumn<PatrolScanReportRow>[]>(() => [
     { key: "spot_name", header: "Spot", className: "min-w-[220px]", render: (row) => `${row.spot_name} (${row.spot_code})` },
-    { key: "last_scanned_at", header: "Last Scanned", className: "w-[180px]", render: (row) => formatDateTime(row.last_scanned_at) },
-    { key: "last_user_name", header: "User", className: "w-[180px]" },
-    { key: "total_scans", header: "Total Scan", className: "w-[120px]" },
-    { key: "last_patrol_run_id", header: "Patrol Run ID", className: "min-w-[220px]" },
+    { key: "shift_name", header: "Shift", className: "w-[170px]", render: (row) => row.shift_name?.trim() || "-" },
+    { key: "scanned_at", header: "Scanned At", className: "w-[180px]", render: (row) => formatDateTime(row.scanned_at) },
+    { key: "user_name", header: "User", className: "w-[180px]" },
+    { key: "patrol_run_id", header: "Patrol Run ID", className: "min-w-[220px]" },
     {
       key: "photo_url",
       header: "Photo",
@@ -291,14 +291,14 @@ export default function PatrolScanReportsPage() {
           </div>
         ) : "-",
     },
-    { key: "last_note", header: "Note", className: "min-w-[220px]", render: (row) => row.last_note?.trim() || "-" },
+    { key: "note", header: "Note", className: "min-w-[220px]", render: (row) => row.note?.trim() || "-" },
   ], []);
 
   return (
     <>
       <PageHeader
         title="Laporan Scan"
-        description="Laporan scan patroli tanpa filter ronde. Ronde dipisah ke Laporan Patroli."
+        description="Laporan detail scan patroli tanpa filter ronde. Satu scan tampil satu baris lengkap dengan shift, foto, dan catatan."
         actions={
           <div className="flex items-center gap-2">
             <select
@@ -351,7 +351,7 @@ export default function PatrolScanReportsPage() {
             {reportListQuery.error instanceof Error ? reportListQuery.error.message : "Gagal load laporan scan."}
           </div>
         ) : (
-          <MasterTable columns={columns} data={rows} getRowKey={(row) => `${row.spot_id}-${row.last_patrol_run_id}-${row.last_user_id}`} defaultPageSize={10} emptyMessage="Belum ada data laporan scan." />
+          <MasterTable columns={columns} data={rows} getRowKey={(row) => row.id} defaultPageSize={10} emptyMessage="Belum ada data laporan scan." />
         )}
       </div>
 
