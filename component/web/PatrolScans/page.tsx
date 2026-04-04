@@ -3,6 +3,7 @@
 
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useRouter } from "next/navigation";
 
 import PageHeader from "@/component/ui/PageHeader";
 import MasterTable, { type MasterTableColumn } from "@/component/ui/MasterTable";
@@ -113,6 +114,7 @@ function formatPatrolScanDateTime(value: string | null | undefined): string {
 
 export default function PatrolScansPage() {
   const qc = useQueryClient();
+  const router = useRouter();
   const authUserFromStorage = React.useMemo(() => readAuthSessionUser(), []);
   const needsMeFetch = !authUserFromStorage;
   const meQuery = useQuery({
@@ -275,6 +277,14 @@ export default function PatrolScansPage() {
     setOpenForm(true);
   };
 
+  const onOpenReport = React.useCallback(() => {
+    const params = new URLSearchParams();
+    if (placeId.trim()) params.set("placeId", placeId.trim());
+    if (effectiveFilterUserId) params.set("userId", effectiveFilterUserId);
+    const query = params.toString();
+    router.push(query ? `/web/patrol-scan-reports?${query}` : "/web/patrol-scan-reports");
+  }, [effectiveFilterUserId, placeId, router]);
+
   const onPickPhoto = async (file: File | null) => {
     if (!file) {
       setForm((p) => ({ ...p, photoUrl: "" }));
@@ -354,6 +364,9 @@ export default function PatrolScansPage() {
         description="Log master scan patroli operasional. Scan yang belum terpetakan ke ronde tetap masuk ke bucket Tanpa Ronde."
         actions={
           <div className="flex items-center gap-2">
+            <Button variant="secondary" onClick={onOpenReport} disabled={!placeId.trim()}>
+              Laporan Scan
+            </Button>
             {canManageOperational ? <Button onClick={onClickCreate} disabled={!placeId.trim()}>+ Create</Button> : null}
           </div>
         }

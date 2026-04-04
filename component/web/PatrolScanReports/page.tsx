@@ -3,6 +3,7 @@
 
 import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useSearchParams } from "next/navigation";
 
 import PageHeader from "@/component/ui/PageHeader";
 import MasterTable, { type MasterTableColumn } from "@/component/ui/MasterTable";
@@ -10,6 +11,7 @@ import Button from "@/component/ui/Button";
 import DateHighlightField from "@/component/ui/DateHighlightField";
 import DownloadProgressModal from "@/component/ui/DownloadProgressModal";
 import LoadingStateCard from "@/component/ui/LoadingStateCard";
+import TextField from "@/component/ui/TextField";
 import { ErrorModalMaster } from "@/component/ui/layout/ModalMaster";
 import { estimateDataUrlSizeBytes, formatBytesToKB } from "@/libs/image";
 import { resolveAssetUrl } from "@/libs/asset-url";
@@ -81,6 +83,7 @@ function formatDateTime(value: string | null | undefined): string {
 }
 
 export default function PatrolScanReportsPage() {
+  const searchParams = useSearchParams();
   const authUserFromStorage = React.useMemo(() => readAuthSessionUser(), []);
   const needsMeFetch = !authUserFromStorage;
   const meQuery = useQuery({
@@ -114,6 +117,7 @@ export default function PatrolScanReportsPage() {
   const shifts = shiftHooks.useList({});
   const [placeId, setPlaceId] = React.useState("");
   const [filterUserId, setFilterUserId] = React.useState("");
+  const [filterRunId, setFilterRunId] = React.useState("");
   const [reportShiftId, setReportShiftId] = React.useState("");
   const [reportFromDate, setReportFromDate] = React.useState("");
   const [reportToDate, setReportToDate] = React.useState("");
@@ -146,20 +150,32 @@ export default function PatrolScanReportsPage() {
     } as User];
   }, [authUser?.fullName, authUser?.username, isGuard, ownUserId, users.data]);
   const shiftRows = React.useMemo(() => ((shifts.data ?? []) as Shift[]).filter((s) => !placeId.trim() || s.place_id === placeId.trim()), [shifts.data, placeId]);
+  const requestedPlaceId = React.useMemo(() => String(searchParams.get("placeId") ?? "").trim(), [searchParams]);
+  const requestedUserId = React.useMemo(() => String(searchParams.get("userId") ?? "").trim(), [searchParams]);
 
   React.useEffect(() => {
     if (placeId.trim()) return;
+    if (requestedPlaceId && placeRows.some((p) => p.id === requestedPlaceId)) {
+      setPlaceId(requestedPlaceId);
+      return;
+    }
     if (preferredPlaceId && placeRows.some((p) => p.id === preferredPlaceId)) {
       setPlaceId(preferredPlaceId);
       return;
     }
     if (placeRows[0]?.id) setPlaceId(placeRows[0].id);
-  }, [placeId, placeRows, preferredPlaceId]);
+  }, [placeId, placeRows, preferredPlaceId, requestedPlaceId]);
 
   React.useEffect(() => {
     if (!isGuard || !ownUserId) return;
     if (filterUserId !== ownUserId) setFilterUserId(ownUserId);
   }, [filterUserId, isGuard, ownUserId]);
+
+  React.useEffect(() => {
+    if (isGuard) return;
+    if (!requestedUserId || filterUserId.trim()) return;
+    setFilterUserId(requestedUserId);
+  }, [filterUserId, isGuard, requestedUserId]);
 
   const reportMonthDatesQuery = useQuery({
     queryKey: ["satpam-patrol-report-dates-report-page", placeId, reportCalendarMonth],
@@ -182,11 +198,12 @@ export default function PatrolScanReportsPage() {
   }, [availableReportDateRange.max, availableReportDateRange.min]);
 
   const reportListQuery = useQuery({
-    queryKey: ["satpam-patrol-scan-report-list-page", placeId, effectiveFilterUserId, reportShiftId, reportFromDate, reportToDate],
+    queryKey: ["satpam-patrol-scan-report-list-page", placeId, effectiveFilterUserId, filterRunId, reportShiftId, reportFromDate, reportToDate],
     queryFn: async () =>
       listPatrolScanReports({
         placeId: placeId.trim() || undefined,
         userId: effectiveFilterUserId || undefined,
+        patrolRunId: filterRunId.trim() || undefined,
         shiftId: reportShiftId.trim() || undefined,
         fromDate: reportFromDate.trim() || undefined,
         toDate: reportToDate.trim() || undefined,
@@ -202,6 +219,10 @@ export default function PatrolScanReportsPage() {
     () => (reportListQuery.data?.data ?? []).map((row) => ({ ...row, photo_url: resolveAssetUrl(row.photo_url) })),
     [reportListQuery.data?.data],
   );
+  const knownRunIds = React.useMemo(() => {
+    const ids = rows.map((r) => r.patrol_run_id).filter((v): v is string => Boolean(v && v.trim()));
+    return Array.from(new Set(ids)).sort((a, b) => a.localeCompare(b));
+  }, [rows]);
 
   const stopProgressTimer = React.useCallback(() => {
     if (!progressTimerRef.current) return;
@@ -243,6 +264,7 @@ export default function PatrolScanReportsPage() {
         {
           placeId: placeId.trim(),
           userId: effectiveFilterUserId || undefined,
+          patrolRunId: filterRunId.trim() || undefined,
           shiftId: reportShiftId.trim() || undefined,
           fromDate: resolvedFrom,
           toDate: resolvedTo,
@@ -271,11 +293,11 @@ export default function PatrolScanReportsPage() {
   };
 
   const columns = React.useMemo<readonly MasterTableColumn<PatrolScanReportRow>[]>(() => [
-    { key: "spot_name", header: "Spot", className: "min-w-[220px]", render: (row) => `${row.spot_name} (${row.spot_code})` },
-    { key: "shift_name", header: "Shift", className: "w-[170px]", render: (row) => row.shift_name?.trim() || "-" },
     { key: "scanned_at", header: "Scanned At", className: "w-[180px]", render: (row) => formatDateTime(row.scanned_at) },
+    { key: "patrol_run_id", header: "Run ID / Bucket ID", className: "min-w-[220px]" },
+    { key: "spot_name", header: "Spot", className: "min-w-[220px]", render: (row) => `${row.spot_name} (${row.spot_code})` },
     { key: "user_name", header: "User", className: "w-[180px]" },
-    { key: "patrol_run_id", header: "Patrol Run ID", className: "min-w-[220px]" },
+    { key: "shift_name", header: "Shift", className: "w-[170px]", render: (row) => row.shift_name?.trim() || "-" },
     {
       key: "photo_url",
       header: "Photo",
@@ -297,7 +319,7 @@ export default function PatrolScanReportsPage() {
     <>
       <PageHeader
         title="Laporan Scan"
-        description="Laporan detail scan patroli tanpa filter ronde. Satu scan tampil satu baris lengkap dengan shift, foto, dan catatan."
+        description="Log detail scan patroli untuk kebutuhan laporan dan download. Format tabel disamakan dengan Patrol Scans."
         actions={
           <div className="flex items-center gap-2">
             <select
@@ -315,7 +337,7 @@ export default function PatrolScanReportsPage() {
         }
       />
 
-      <div className="mb-3 grid gap-3 app-glass rounded-[24px] p-3 shadow-[0_16px_34px_rgba(76,99,168,0.12)] sm:grid-cols-5">
+      <div className="mb-3 grid gap-3 app-glass rounded-[24px] p-3 shadow-[0_16px_34px_rgba(76,99,168,0.12)] sm:grid-cols-3">
         <label className="block">
           <span className="mb-1 block text-[13px] font-medium text-slate-800">Place</span>
           <select value={placeId} onChange={(e) => setPlaceId(e.target.value)} className="w-full rounded-xl border border-white/70 bg-white/85 px-3.5 py-3 text-[13px] text-slate-900 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)] outline-none focus:border-sky-400/60 focus:bg-white focus:ring-4 focus:ring-sky-400/15">
@@ -329,6 +351,21 @@ export default function PatrolScanReportsPage() {
             {userRows.map((u) => <option key={u.id} value={u.id}>{u.full_name} ({u.username})</option>)}
           </select>
         </label>
+        <TextField
+          list="patrol-report-run-id-options"
+          label="Run ID / Bucket ID"
+          value={filterRunId}
+          onChange={(e) => setFilterRunId(e.target.value)}
+          placeholder="RUN-2026-03-03-001"
+        />
+      </div>
+      <datalist id="patrol-report-run-id-options">
+        {knownRunIds.map((runId) => (
+          <option key={runId} value={runId} />
+        ))}
+      </datalist>
+
+      <div className="mb-3 grid gap-3 app-glass rounded-[24px] p-3 shadow-[0_16px_34px_rgba(76,99,168,0.12)] sm:grid-cols-3">
         <label className="block">
           <span className="mb-1 block text-[13px] font-medium text-slate-800">Shift</span>
           <select value={reportShiftId} onChange={(e) => setReportShiftId(e.target.value)} disabled={!placeId.trim()} className="w-full rounded-xl border border-white/70 bg-white/85 px-3.5 py-3 text-[13px] text-slate-900 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)] outline-none focus:border-sky-400/60 focus:bg-white focus:ring-4 focus:ring-sky-400/15">
