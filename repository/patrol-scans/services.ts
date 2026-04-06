@@ -37,6 +37,10 @@ export async function createPatrolScan(body: PatrolScanCreate): Promise<CreatedI
   return agent.post<CreatedIdResponse>("", body);
 }
 
+export async function deletePatrolScan(id: string): Promise<CreatedIdResponse> {
+  return agent.delete<CreatedIdResponse>(`/${id}`);
+}
+
 export async function getPatrolProgress(attendanceId: string): Promise<PatrolProgress> {
   return progressAgent.get<PatrolProgress>("", { query: { attendanceId } });
 }

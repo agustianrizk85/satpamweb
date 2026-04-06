@@ -8,6 +8,7 @@ export type MasterTableColumn<TData> = {
   sortable?: boolean;
   className?: string;
   render?: (row: TData) => ReactNode;
+  sortValue?: (row: TData) => string | number | boolean | Date | null | undefined;
 };
 
 type MasterTableProps<TData> = {
@@ -44,6 +45,37 @@ function stringifyValue(value: unknown) {
   if (typeof value === "string") return value;
   if (typeof value === "number" || typeof value === "boolean") return String(value);
   return "";
+}
+
+const stringCollator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
+
+function normalizeSortValue(value: string | number | boolean | Date | null | undefined) {
+  if (value === null || value === undefined) return null;
+  if (value instanceof Date) return value.getTime();
+  if (typeof value === "boolean") return value ? 1 : 0;
+  return value;
+}
+
+function compareSortValue(
+  left: string | number | boolean | Date | null | undefined,
+  right: string | number | boolean | Date | null | undefined,
+  direction: "asc" | "desc",
+) {
+  const valueA = normalizeSortValue(left);
+  const valueB = normalizeSortValue(right);
+
+  if (valueA === null && valueB === null) return 0;
+  if (valueA === null) return direction === "asc" ? 1 : -1;
+  if (valueB === null) return direction === "asc" ? -1 : 1;
+
+  if (typeof valueA === "number" && typeof valueB === "number") {
+    if (valueA < valueB) return direction === "asc" ? -1 : 1;
+    if (valueA > valueB) return direction === "asc" ? 1 : -1;
+    return 0;
+  }
+
+  const compared = stringCollator.compare(String(valueA), String(valueB));
+  return direction === "asc" ? compared : -compared;
 }
 
 export default function MasterTable<TData>({
@@ -96,18 +128,22 @@ export default function MasterTable<TData>({
     if (isServerSorting || !activeSortKey) return filteredData;
 
     const copied = [...filteredData];
+    const activeColumn = columns.find((column) => String(column.key) === activeSortKey);
     copied.sort((a, b) => {
-      const rawA = (a as Record<string, unknown>)[activeSortKey];
-      const rawB = (b as Record<string, unknown>)[activeSortKey];
-      const valA = stringifyValue(rawA).toLowerCase();
-      const valB = stringifyValue(rawB).toLowerCase();
-
-      if (valA < valB) return activeSortDirection === "asc" ? -1 : 1;
-      if (valA > valB) return activeSortDirection === "asc" ? 1 : -1;
-      return 0;
+      const rawA = activeColumn?.sortValue
+        ? activeColumn.sortValue(a)
+        : (a as Record<string, unknown>)[activeSortKey];
+      const rawB = activeColumn?.sortValue
+        ? activeColumn.sortValue(b)
+        : (b as Record<string, unknown>)[activeSortKey];
+      return compareSortValue(
+        rawA as string | number | boolean | Date | null | undefined,
+        rawB as string | number | boolean | Date | null | undefined,
+        activeSortDirection,
+      );
     });
     return copied;
-  }, [activeSortDirection, activeSortKey, filteredData, isServerSorting]);
+  }, [activeSortDirection, activeSortKey, columns, filteredData, isServerSorting]);
 
   const currentPage = isServerPaging
     ? Math.max(1, Math.min(serverPagination?.page ?? 1, Math.max(serverPagination?.totalPages ?? 1, 1)))

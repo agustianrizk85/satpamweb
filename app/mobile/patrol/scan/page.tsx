@@ -11,8 +11,11 @@ import type { SpotAssignment } from "@/repository/spot-assignments";
 import { spotAssignmentHooks } from "@/repository/spot-assignments";
 import { attendanceHooks } from "@/repository/attendances";
 import type { Attendance } from "@/repository/attendances";
-import { createPatrolScan, getPatrolProgress } from "@/repository/patrol-scans";
+import { createPatrolScan } from "@/repository/patrol-scans";
 import type { PatrolProgress } from "@/repository/patrol-scans";
+import type { PatrolRoutePoint } from "@/repository/patrol-route-points";
+import { listPatrolRoutePoints } from "@/repository/patrol-route-points";
+import { listPatrolScanReports } from "@/repository/reports";
 import { uploadPhoto } from "@/repository/uploads";
 import { compressImageDataUrl, estimateDataUrlSizeBytes, formatBytesToKB } from "@/libs/image";
 
@@ -156,14 +159,6 @@ export default function MobilePatrolScanPage() {
     return rows.find((row) => row.check_in_at && !row.check_out_at) ?? null;
   }, [attendanceRows, myActiveAssignment?.id]);
 
-  const patrolProgressQuery = useQuery<PatrolProgress, Error>({
-    queryKey: ["satpam-mobile-patrol-progress", currentAttendance?.id],
-    enabled: Boolean(currentAttendance?.id),
-    queryFn: () => getPatrolProgress(currentAttendance!.id),
-    refetchOnWindowFocus: false,
-  });
-  const patrolProgress = patrolProgressQuery.data ?? null;
-
   const spotsQuery = spotHooks.useList({});
   const spotRows = React.useMemo(() => (spotsQuery.data ?? []) as Spot[], [spotsQuery.data]);
   const availableSpots = React.useMemo(() => {
@@ -171,6 +166,111 @@ export default function MobilePatrolScanPage() {
     if (!pid) return [] as Spot[];
     return spotRows.filter((s) => s.place_id === pid && (s.status ?? "ACTIVE") === "ACTIVE");
   }, [activePlaceId, spotRows]);
+
+  const routePointQuery = useQuery({
+    queryKey: ["satpam-mobile-patrol-route-points", activePlaceId],
+    enabled: Boolean(activePlaceId),
+    queryFn: () =>
+      listPatrolRoutePoints({
+        placeId: activePlaceId,
+        page: 1,
+        pageSize: 500,
+        sortBy: "seq",
+        sortOrder: "asc",
+      }),
+    refetchOnWindowFocus: false,
+  });
+  const patrolDayReportQuery = useQuery({
+    queryKey: ["satpam-mobile-patrol-progress-scans", activePlaceId, me?.id, todayKey],
+    enabled: Boolean(activePlaceId && me?.id),
+    queryFn: () =>
+      listPatrolScanReports({
+        placeId: activePlaceId,
+        userId: me!.id,
+        fromDate: todayKey,
+        toDate: todayKey,
+        page: 1,
+        pageSize: 500,
+        sortBy: "scannedAt",
+        sortOrder: "desc",
+      }),
+    refetchOnWindowFocus: false,
+  });
+  const routePointRows = React.useMemo(() => (routePointQuery.data ?? []) as PatrolRoutePoint[], [routePointQuery.data]);
+  const patrolProgress = React.useMemo<PatrolProgress | null>(() => {
+    if (!activePlaceId || !me?.id) return null;
+
+    const activeRoutePoints = routePointRows.filter((row) => row.is_active);
+    const scanRows = patrolDayReportQuery.data?.data ?? [];
+    const scansBySpotId = new Map<
+      string,
+      {
+        count: number;
+        lastScannedAt: string | null;
+        lastPatrolRunId: string | null;
+      }
+    >();
+    const runIds = new Set<string>();
+
+    for (const row of scanRows) {
+      if (row.patrol_run_id?.trim()) runIds.add(row.patrol_run_id.trim());
+      const prev = scansBySpotId.get(row.spot_id);
+      if (!prev) {
+        scansBySpotId.set(row.spot_id, {
+          count: 1,
+          lastScannedAt: row.scanned_at || null,
+          lastPatrolRunId: row.patrol_run_id || null,
+        });
+        continue;
+      }
+      prev.count += 1;
+      if (row.scanned_at && (!prev.lastScannedAt || new Date(row.scanned_at).getTime() > new Date(prev.lastScannedAt).getTime())) {
+        prev.lastScannedAt = row.scanned_at;
+        prev.lastPatrolRunId = row.patrol_run_id || null;
+      }
+    }
+
+    return {
+      attendance_id: currentAttendance?.id ?? "",
+      place_id: activePlaceId,
+      user_id: me.id,
+      shift_id: myActiveAssignment?.shift_id ?? currentAttendance?.shift_id ?? null,
+      attendance_date: todayKey,
+      check_in_at: currentAttendance?.check_in_at ?? null,
+      check_out_at: currentAttendance?.check_out_at ?? null,
+      total_route_spots: activeRoutePoints.length,
+      patrolled_spots: activeRoutePoints.filter((row) => scansBySpotId.has(row.spot_id)).length,
+      unpatrolled_spots: activeRoutePoints.filter((row) => !scansBySpotId.has(row.spot_id)).length,
+      total_scans: scanRows.length,
+      total_patrol_runs: runIds.size,
+      spots: activeRoutePoints.map((routePoint) => {
+        const spotMeta = availableSpots.find((spot) => spot.id === routePoint.spot_id);
+        const scanMeta = scansBySpotId.get(routePoint.spot_id);
+        return {
+          spot_id: routePoint.spot_id,
+          spot_code: spotMeta?.spot_code ?? spotMeta?.code ?? routePoint.spot_id,
+          spot_name: spotMeta?.spot_name ?? spotMeta?.name ?? routePoint.spot_id,
+          seq: routePoint.seq,
+          scan_count: scanMeta?.count ?? 0,
+          is_patrolled: Boolean(scanMeta),
+          last_scanned_at: scanMeta?.lastScannedAt ?? null,
+          last_patrol_run_id: scanMeta?.lastPatrolRunId ?? null,
+        };
+      }),
+    };
+  }, [
+    activePlaceId,
+    availableSpots,
+    currentAttendance?.check_in_at,
+    currentAttendance?.check_out_at,
+    currentAttendance?.id,
+    currentAttendance?.shift_id,
+    me?.id,
+    myActiveAssignment?.shift_id,
+    patrolDayReportQuery.data?.data,
+    routePointRows,
+    todayKey,
+  ]);
 
   const isScanStep = !resolvedSpot;
 
@@ -375,10 +475,8 @@ export default function MobilePatrolScanPage() {
         photoUrl: uploadedPhoto.photoUrl,
         note: note.trim(),
       });
-      if (currentAttendance?.id) {
-        await queryClient.invalidateQueries({ queryKey: ["satpam-mobile-patrol-progress", currentAttendance.id] });
-        await patrolProgressQuery.refetch();
-      }
+      await queryClient.invalidateQueries({ queryKey: ["satpam-mobile-patrol-progress-scans", activePlaceId, me.id, todayKey] });
+      await patrolDayReportQuery.refetch();
       setSuccessText("Patrol scan berhasil.");
       setLastProgressFlash(resolvedSpot.spot_name ?? resolvedSpot.name ?? "Spot");
       setPatrolRunId(buildRunId(new Date()));
@@ -396,7 +494,7 @@ export default function MobilePatrolScanPage() {
     me?.id,
     myActiveAssignment,
     note,
-    patrolProgressQuery,
+    patrolDayReportQuery,
     patrolRunId,
     photoUrl,
     queryClient,
@@ -453,7 +551,7 @@ export default function MobilePatrolScanPage() {
           </div>
         ) : null}
 
-        {currentAttendance?.id ? (
+        {myActiveAssignment ? (
           <div className="mb-3 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-4">
             <div className="flex items-center justify-between gap-3">
               <div>
@@ -474,7 +572,7 @@ export default function MobilePatrolScanPage() {
 
             {lastProgressFlash ? (
               <div className="mt-3 rounded-xl border border-emerald-400/30 bg-emerald-400/10 px-3 py-2 text-[12px] font-bold text-emerald-100">
-                Spot {lastProgressFlash} berhasil masuk ke progres shift.
+                Spot {lastProgressFlash} berhasil masuk ke progres patroli hari ini.
               </div>
             ) : null}
 
@@ -487,10 +585,10 @@ export default function MobilePatrolScanPage() {
 
             <div className="mt-3 grid grid-cols-2 gap-2 text-[11px] font-bold text-emerald-100">
               <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-2">
-                Attendance: {currentAttendance.id.slice(0, 8)}
+                Attendance: {currentAttendance?.id ? currentAttendance.id.slice(0, 8) : "opsional"}
               </div>
               <div className="rounded-xl border border-white/10 bg-white/5 px-3 py-2">
-                Tanggal: {currentAttendance.attendance_date}
+                Tanggal: {todayKey}
               </div>
             </div>
 
@@ -638,9 +736,9 @@ export default function MobilePatrolScanPage() {
         {!spotsQuery.isLoading && availableSpots.length === 0 ? (
           <div className="mt-2 text-[12px] font-bold text-amber-300">Belum ada spot aktif di place ini.</div>
         ) : null}
-        {patrolProgressQuery.error ? (
+        {routePointQuery.error || patrolDayReportQuery.error ? (
           <div className="mt-2 text-[12px] font-bold text-amber-300">
-            {patrolProgressQuery.error.message || "Gagal memuat progress patroli."}
+            {(routePointQuery.error ?? patrolDayReportQuery.error)?.message || "Gagal memuat progress patroli."}
           </div>
         ) : null}
         {cameraError ? <div className="mt-2 text-[12px] font-bold text-amber-300">{cameraError}</div> : null}

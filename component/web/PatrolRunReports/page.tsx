@@ -15,6 +15,8 @@ import type { Place } from "@/repository/Places";
 import { placeHooks } from "@/repository/Places";
 import type { Shift } from "@/repository/Shifts";
 import { shiftHooks } from "@/repository/Shifts";
+import type { User } from "@/repository/Users";
+import { userHooks } from "@/repository/Users";
 import type { PatrolRun } from "@/repository/patrol-runs/model";
 import { listPatrolRuns } from "@/repository/patrol-runs/services";
 import {
@@ -57,7 +59,10 @@ function formatRunLabel(runNo: number | null | undefined): string {
 export default function PatrolRunReportsPage() {
   const places = placeHooks.useList({});
   const shifts = shiftHooks.useList({});
+  const users = userHooks.useList({});
   const placeRows = React.useMemo(() => (places.data ?? []) as Place[], [places.data]);
+  const userRows = React.useMemo(() => (users.data ?? []) as User[], [users.data]);
+  const userNameById = React.useMemo(() => new Map(userRows.map((row) => [row.id, row.full_name || row.username || row.id])), [userRows]);
   const [placeId, setPlaceId] = React.useState("");
   const [filterShiftId, setFilterShiftId] = React.useState("");
   const [filterRunNo, setFilterRunNo] = React.useState("");
@@ -224,14 +229,43 @@ export default function PatrolRunReportsPage() {
   };
 
   const columns = React.useMemo<readonly MasterTableColumn<PatrolRun>[]>(() => [
-    { key: "run_no", header: "Ronde", className: "w-[140px]", render: (row) => formatRunLabel(row.run_no) },
-    { key: "id", header: "Run ID", className: "min-w-[220px]" },
-    { key: "status", header: "Status", className: "w-[120px]", render: (row) => row.status.toUpperCase() },
+    { key: "run_no", header: "Ronde", sortable: true, className: "w-[140px]", render: (row) => formatRunLabel(row.run_no), sortValue: (row) => row.run_no ?? -1 },
+    { key: "id", header: "Run ID", sortable: true, className: "min-w-[220px]" },
+    {
+      key: "shift_name",
+      header: "Shift",
+      sortable: true,
+      className: "min-w-[180px]",
+      render: (row) => row.shift_name?.trim() || "-",
+      sortValue: (row) => row.shift_name?.trim() || null,
+    },
+    { key: "status", header: "Status", sortable: true, className: "w-[120px]", render: (row) => row.status.toUpperCase() },
     { key: "progress", header: "Progress", className: "w-[180px]", render: (row) => `${row.unique_scanned_spots}/${row.total_active_spots} spot | ${row.scan_count} scan` },
-    { key: "user_id", header: "User ID", className: "min-w-[220px]" },
-    { key: "started_at", header: "Started", className: "w-[200px]", render: (row) => formatDateTime(row.started_at) },
-    { key: "completed_at", header: "Completed", className: "w-[200px]", render: (row) => formatDateTime(row.completed_at) },
-  ], []);
+    {
+      key: "user_id",
+      header: "User",
+      sortable: true,
+      className: "min-w-[220px]",
+      render: (row) => userNameById.get(row.user_id) ?? row.user_id,
+      sortValue: (row) => userNameById.get(row.user_id) ?? row.user_id,
+    },
+    {
+      key: "started_at",
+      header: "Started",
+      sortable: true,
+      className: "w-[200px]",
+      render: (row) => formatDateTime(row.started_at),
+      sortValue: (row) => (row.started_at ? new Date(row.started_at) : null),
+    },
+    {
+      key: "completed_at",
+      header: "Completed",
+      sortable: true,
+      className: "w-[200px]",
+      render: (row) => formatDateTime(row.completed_at),
+      sortValue: (row) => (row.completed_at ? new Date(row.completed_at) : null),
+    },
+  ], [userNameById]);
 
   return (
     <>

@@ -5,6 +5,8 @@ export type PatrolRun = {
   place_id: string;
   user_id: string;
   attendance_id?: string | null;
+  shift_id?: string | null;
+  shift_name?: string | null;
   run_no: number;
   total_active_spots: number;
   status: PatrolRunStatus | string;

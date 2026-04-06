@@ -2,7 +2,7 @@
 /* eslint-disable @next/next/no-img-element */
 
 import * as React from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "next/navigation";
 
 import PageHeader from "@/component/ui/PageHeader";
@@ -12,7 +12,7 @@ import DateHighlightField from "@/component/ui/DateHighlightField";
 import DownloadProgressModal from "@/component/ui/DownloadProgressModal";
 import LoadingStateCard from "@/component/ui/LoadingStateCard";
 import TextField from "@/component/ui/TextField";
-import { ErrorModalMaster } from "@/component/ui/layout/ModalMaster";
+import { ConfirmModalMaster, ErrorModalMaster, SuccessModalMaster } from "@/component/ui/layout/ModalMaster";
 import { estimateDataUrlSizeBytes, formatBytesToKB } from "@/libs/image";
 import { resolveAssetUrl } from "@/libs/asset-url";
 
@@ -24,6 +24,7 @@ import type { Shift } from "@/repository/Shifts";
 import { shiftHooks } from "@/repository/Shifts";
 import type { MeResponse } from "@/repository/auth";
 import { me as getMe } from "@/repository/auth";
+import { deletePatrolScan } from "@/repository/patrol-scans";
 import {
   downloadPatrolScanReportCsv,
   listPatrolScanReportDates,
@@ -83,6 +84,7 @@ function formatDateTime(value: string | null | undefined): string {
 }
 
 export default function PatrolScanReportsPage() {
+  const qc = useQueryClient();
   const searchParams = useSearchParams();
   const authUserFromStorage = React.useMemo(() => readAuthSessionUser(), []);
   const needsMeFetch = !authUserFromStorage;
@@ -107,6 +109,7 @@ export default function PatrolScanReportsPage() {
 
   const roleCode = String(authUser?.role ?? "").trim().toUpperCase();
   const isGuard = roleCode === "GUARD";
+  const canManageOperational = roleCode === "SUPER_ADMIN";
   const ownUserId = authUser?.id != null ? String(authUser.id).trim() : "";
   const ownDefaultPlaceId = String(authUser?.defaultPlaceId ?? "").trim();
   const ownFirstAccessPlaceId = String(authUser?.placeAccesses?.[0]?.placeId ?? "").trim();
@@ -130,7 +133,10 @@ export default function PatrolScanReportsPage() {
   const [downloadTotalBytes, setDownloadTotalBytes] = React.useState<number | null>(null);
   const [errorOpen, setErrorOpen] = React.useState(false);
   const [errorText, setErrorText] = React.useState("Terjadi kesalahan.");
+  const [successOpen, setSuccessOpen] = React.useState(false);
+  const [successText, setSuccessText] = React.useState("Berhasil.");
   const [previewPhotoUrl, setPreviewPhotoUrl] = React.useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = React.useState<PatrolScanReportRow | null>(null);
   const progressTimerRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
   const transferStartedRef = React.useRef(false);
   const effectiveFilterUserId = (isGuard ? ownUserId : filterUserId).trim();
@@ -231,6 +237,13 @@ export default function PatrolScanReportsPage() {
   }, []);
   React.useEffect(() => () => stopProgressTimer(), [stopProgressTimer]);
 
+  const deleteMut = useMutation({
+    mutationFn: async (id: string) => deletePatrolScan(id),
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: ["satpam-patrol-scan-report-list-page"] });
+    },
+  });
+
   const onDownloadReport = async () => {
     const trackPdfProgress = reportFormat === "pdf";
     try {
@@ -292,12 +305,47 @@ export default function PatrolScanReportsPage() {
     }
   };
 
+  const submitDelete = async () => {
+    if (!deleteTarget) return;
+    try {
+      if (!canManageOperational) throw new Error("Delete patrol scan hanya tersedia untuk super admin.");
+      await deleteMut.mutateAsync(deleteTarget.id);
+      setDeleteTarget(null);
+      setSuccessText("Patrol scan berhasil dihapus.");
+      setSuccessOpen(true);
+    } catch (e) {
+      setErrorText(e instanceof Error ? e.message : "Gagal menghapus patrol scan.");
+      setErrorOpen(true);
+    }
+  };
+
   const columns = React.useMemo<readonly MasterTableColumn<PatrolScanReportRow>[]>(() => [
-    { key: "scanned_at", header: "Scanned At", className: "w-[180px]", render: (row) => formatDateTime(row.scanned_at) },
-    { key: "patrol_run_id", header: "Run ID / Bucket ID", className: "min-w-[220px]" },
-    { key: "spot_name", header: "Spot", className: "min-w-[220px]", render: (row) => `${row.spot_name} (${row.spot_code})` },
-    { key: "user_name", header: "User", className: "w-[180px]" },
-    { key: "shift_name", header: "Shift", className: "w-[170px]", render: (row) => row.shift_name?.trim() || "-" },
+    {
+      key: "scanned_at",
+      header: "Scanned At",
+      sortable: true,
+      className: "w-[180px]",
+      render: (row) => formatDateTime(row.scanned_at),
+      sortValue: (row) => (row.scanned_at ? new Date(row.scanned_at) : null),
+    },
+    { key: "patrol_run_id", header: "Run ID / Bucket ID", sortable: true, className: "min-w-[220px]" },
+    {
+      key: "spot_name",
+      header: "Spot",
+      sortable: true,
+      className: "min-w-[220px]",
+      render: (row) => `${row.spot_name} (${row.spot_code})`,
+      sortValue: (row) => `${row.spot_name ?? ""} ${row.spot_code ?? ""}`.trim(),
+    },
+    { key: "user_name", header: "User", sortable: true, className: "w-[180px]" },
+    {
+      key: "shift_name",
+      header: "Shift",
+      sortable: true,
+      className: "w-[170px]",
+      render: (row) => row.shift_name?.trim() || "-",
+      sortValue: (row) => row.shift_name?.trim() || null,
+    },
     {
       key: "photo_url",
       header: "Photo",
@@ -312,8 +360,27 @@ export default function PatrolScanReportsPage() {
           </div>
         ) : "-",
     },
-    { key: "note", header: "Note", className: "min-w-[220px]", render: (row) => row.note?.trim() || "-" },
-  ], []);
+    {
+      key: "note",
+      header: "Note",
+      sortable: true,
+      className: "min-w-[220px]",
+      render: (row) => row.note?.trim() || "-",
+      sortValue: (row) => row.note?.trim() || null,
+    },
+    ...(canManageOperational
+      ? [{
+          key: "actions",
+          header: "Actions",
+          className: "w-[140px]",
+          render: (row: PatrolScanReportRow) => (
+            <Button variant="secondary" className="h-8 px-3 text-[12px]" onClick={() => setDeleteTarget(row)}>
+              Delete
+            </Button>
+          ),
+        } satisfies MasterTableColumn<PatrolScanReportRow>]
+      : []),
+  ], [canManageOperational]);
 
   return (
     <>
@@ -392,6 +459,17 @@ export default function PatrolScanReportsPage() {
       </div>
 
       <ErrorModalMaster open={errorOpen} onClose={() => setErrorOpen(false)} moduleLabel="Laporan Scan" variant="create" title="Error" message={errorText} />
+      <SuccessModalMaster open={successOpen} onClose={() => setSuccessOpen(false)} moduleLabel="Laporan Scan" variant="delete" title="Success" message={successText} />
+      <ConfirmModalMaster
+        open={Boolean(deleteTarget)}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={submitDelete}
+        moduleLabel="Laporan Scan"
+        action="delete"
+        title="Delete Patrol Scan"
+        message={`Yakin hapus scan patrol untuk spot ${deleteTarget ? `${deleteTarget.spot_name} (${deleteTarget.spot_code})` : "-"} pada ${deleteTarget ? formatDateTime(deleteTarget.scanned_at) : "-"}?`}
+        confirmLabel={deleteMut.isPending ? "Deleting..." : "Delete"}
+      />
       <DownloadProgressModal open={downloadProgressOpen} percent={downloadProgressPercent} title="Downloading PDF Laporan Scan" subtitle="Laporan sedang diunduh. Mohon tunggu..." loadedBytes={downloadLoadedBytes} totalBytes={downloadTotalBytes} />
 
       {previewPhotoUrl ? (
