@@ -10,6 +10,7 @@ import DateHighlightField from "@/component/ui/DateHighlightField";
 import DownloadProgressModal from "@/component/ui/DownloadProgressModal";
 import LoadingStateCard from "@/component/ui/LoadingStateCard";
 import { ErrorModalMaster } from "@/component/ui/layout/ModalMaster";
+import { buildVirtualRoundMap, formatPatrolRoundLabel } from "@/libs/patrol-rounds";
 
 import type { Place } from "@/repository/Places";
 import { placeHooks } from "@/repository/Places";
@@ -50,10 +51,6 @@ function formatDateTime(value: string | null | undefined): string {
     second: "2-digit",
     hour12: false,
   }).format(parsed).replace(/\./g, ":") + " WIB";
-}
-
-function formatRunLabel(runNo: number | null | undefined): string {
-  return Number(runNo) === 0 ? "Tanpa Ronde" : `Ronde ${runNo ?? "-"}`;
 }
 
 export default function PatrolRunReportsPage() {
@@ -109,41 +106,12 @@ export default function PatrolRunReportsPage() {
     setToDate((prev) => (prev.trim() ? prev : availableReportDateRange.max));
   }, [availableReportDateRange.max, availableReportDateRange.min]);
 
-  const runOptionsQuery = useQuery({
-    queryKey: ["satpam-patrol-run-report-round-options", placeId, filterShiftId, fromDate, toDate],
-    queryFn: async () =>
-      listPatrolRuns({
-        placeId: placeId.trim(),
-        shiftId: filterShiftId.trim() || undefined,
-        fromDate: fromDate.trim() || availableReportDateRange.min || undefined,
-        toDate: toDate.trim() || availableReportDateRange.max || undefined,
-        page: 1,
-        pageSize: 200,
-        sortBy: "runNo",
-        sortOrder: "asc",
-      }),
-    enabled: Boolean(placeId.trim()),
-  });
-  const availableRounds = React.useMemo(() => {
-    const roundNos = (runOptionsQuery.data ?? [])
-      .map((run) => run.run_no)
-      .filter((value) => Number.isFinite(value) && value > 0);
-    return Array.from(new Set(roundNos)).sort((a, b) => a - b);
-  }, [runOptionsQuery.data]);
-
-  React.useEffect(() => {
-    if (!filterRunNo.trim()) return;
-    if (availableRounds.includes(Number(filterRunNo))) return;
-    setFilterRunNo("");
-  }, [availableRounds, filterRunNo]);
-
   const listQuery = useQuery({
-    queryKey: ["satpam-patrol-run-report-list-page", placeId, filterShiftId, filterRunNo, fromDate, toDate],
+    queryKey: ["satpam-patrol-run-report-list-page", placeId, filterShiftId, fromDate, toDate],
     queryFn: async () =>
       listPatrolRuns({
         placeId,
         shiftId: filterShiftId.trim() || undefined,
-        runNo: filterRunNo.trim() ? Number(filterRunNo) : undefined,
         fromDate: fromDate.trim() || undefined,
         toDate: toDate.trim() || undefined,
         page: 1,
@@ -154,7 +122,25 @@ export default function PatrolRunReportsPage() {
     enabled: Boolean(placeId.trim()),
   });
 
-  const rows = React.useMemo(() => (listQuery.data ?? []) as PatrolRun[], [listQuery.data]);
+  const fetchedRows = React.useMemo(() => (listQuery.data ?? []) as PatrolRun[], [listQuery.data]);
+  const virtualRoundMap = React.useMemo(() => buildVirtualRoundMap(fetchedRows), [fetchedRows]);
+  const availableRounds = React.useMemo(() => {
+    const roundNos = fetchedRows
+      .map((row) => virtualRoundMap.get(row.id)?.displayRoundNo ?? row.run_no)
+      .filter((value) => Number.isFinite(value) && value > 0);
+    return Array.from(new Set(roundNos)).sort((a, b) => a - b);
+  }, [fetchedRows, virtualRoundMap]);
+  const rows = React.useMemo(
+    () => fetchedRows.filter((row) => !filterRunNo.trim() || (virtualRoundMap.get(row.id)?.displayRoundNo ?? row.run_no) === Number(filterRunNo)),
+    [fetchedRows, filterRunNo, virtualRoundMap],
+  );
+
+  React.useEffect(() => {
+    if (listQuery.isLoading || listQuery.isFetching) return;
+    if (!filterRunNo.trim()) return;
+    if (availableRounds.includes(Number(filterRunNo))) return;
+    setFilterRunNo("");
+  }, [availableRounds, filterRunNo, listQuery.isFetching, listQuery.isLoading]);
 
   const stopProgressTimer = React.useCallback(() => {
     if (!progressTimerRef.current) return;
@@ -229,7 +215,17 @@ export default function PatrolRunReportsPage() {
   };
 
   const columns = React.useMemo<readonly MasterTableColumn<PatrolRun>[]>(() => [
-    { key: "run_no", header: "Ronde", sortable: true, className: "w-[140px]", render: (row) => formatRunLabel(row.run_no), sortValue: (row) => row.run_no ?? -1 },
+    {
+      key: "run_no",
+      header: "Ronde",
+      sortable: true,
+      className: "w-[140px]",
+      render: (row) => {
+        const meta = virtualRoundMap.get(row.id);
+        return formatPatrolRoundLabel(meta?.displayRoundNo ?? row.run_no, meta?.isVirtual);
+      },
+      sortValue: (row) => virtualRoundMap.get(row.id)?.displayRoundNo ?? row.run_no ?? -1,
+    },
     { key: "id", header: "Run ID", sortable: true, className: "min-w-[220px]" },
     {
       key: "shift_name",
@@ -265,7 +261,7 @@ export default function PatrolRunReportsPage() {
       render: (row) => formatDateTime(row.completed_at),
       sortValue: (row) => (row.completed_at ? new Date(row.completed_at) : null),
     },
-  ], [userNameById]);
+  ], [userNameById, virtualRoundMap]);
 
   return (
     <>
@@ -314,7 +310,7 @@ export default function PatrolRunReportsPage() {
             className="w-full rounded-xl border border-white/70 bg-white/85 px-3.5 py-3 text-[13px] text-slate-900 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)] outline-none focus:border-sky-400/60 focus:bg-white focus:ring-4 focus:ring-sky-400/15"
           >
             <option value="">Semua ronde</option>
-            {availableRounds.map((roundNo) => <option key={roundNo} value={String(roundNo)}>{formatRunLabel(roundNo)}</option>)}
+            {availableRounds.map((roundNo) => <option key={roundNo} value={String(roundNo)}>{formatPatrolRoundLabel(roundNo)}</option>)}
           </select>
         </label>
 

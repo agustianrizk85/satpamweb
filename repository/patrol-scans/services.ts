@@ -11,6 +11,8 @@ export type PatrolScanListParams = {
   patrolRunId?: string;
   userId?: string;
   attendanceId?: string;
+  fromDate?: string;
+  toDate?: string;
   page?: number;
   pageSize?: number;
   sortBy?: "scannedAt" | "placeId" | "userId" | "spotId" | "patrolRunId";

@@ -9,6 +9,7 @@ import TextField from "@/component/ui/TextField";
 import LoadingStateCard from "@/component/ui/LoadingStateCard";
 import { ConfirmModalMaster, ErrorModalMaster, SuccessModalMaster } from "@/component/ui/layout/ModalMaster";
 import { readListMeta } from "@/libs/list-meta";
+import { buildVirtualRoundMap, formatPatrolRoundLabel } from "@/libs/patrol-rounds";
 
 import type { Place } from "@/repository/Places";
 import { placeHooks } from "@/repository/Places";
@@ -62,10 +63,6 @@ function formatDateTime(value: string | null | undefined): string {
     second: "2-digit",
     hour12: false,
   }).format(parsed).replace(/\./g, ":") + " WIB";
-}
-
-function formatRunLabel(runNo: number | null | undefined): string {
-  return Number(runNo) === 0 ? "Tanpa Ronde" : `Ronde ${runNo ?? "-"}`;
 }
 
 function toCreatePayload(state: FormState): PatrolRunCreate {
@@ -153,6 +150,7 @@ export default function PatrolRunsPage() {
   });
 
   const rows = React.useMemo(() => (listQuery.data ?? []) as PatrolRun[], [listQuery.data]);
+  const virtualRoundMap = React.useMemo(() => buildVirtualRoundMap(rows), [rows]);
   const listMeta = React.useMemo(() => readListMeta(listQuery.data), [listQuery.data]);
   const pagination = React.useMemo(
     () => ({
@@ -245,7 +243,17 @@ export default function PatrolRunsPage() {
   };
 
   const columns = React.useMemo<readonly MasterTableColumn<PatrolRun>[]>(() => [
-    { key: "run_no", header: "Ronde", sortable: true, className: "w-[120px]", render: (row) => formatRunLabel(row.run_no) },
+    {
+      key: "run_no",
+      header: "Ronde",
+      sortable: true,
+      className: "w-[120px]",
+      render: (row) => {
+        const meta = virtualRoundMap.get(row.id);
+        return formatPatrolRoundLabel(meta?.displayRoundNo ?? row.run_no, meta?.isVirtual);
+      },
+      sortValue: (row) => virtualRoundMap.get(row.id)?.displayRoundNo ?? row.run_no ?? -1,
+    },
     { key: "user_id", header: "User", className: "w-[220px]", render: (row) => userNameById.get(row.user_id) ?? row.user_id },
     { key: "attendance_id", header: "Attendance Legacy", className: "w-[220px]", render: (row) => row.attendance_id || "-" },
     { key: "status", header: "Status", sortable: true, className: "w-[110px]", render: (row) => row.status.toUpperCase() },
@@ -272,7 +280,7 @@ export default function PatrolRunsPage() {
         </div>
       ),
     },
-  ], [userNameById]);
+  ], [userNameById, virtualRoundMap]);
 
   return (
     <>
@@ -485,7 +493,7 @@ export default function PatrolRunsPage() {
           <div className="space-y-2 text-sm text-slate-700">
             <div>Run ini akan dihapus bersama scan yang terhubung.</div>
             <div className="font-semibold">
-              {deleting ? `${formatRunLabel(deleting.run_no)} | ${userNameById.get(deleting.user_id) ?? deleting.user_id}` : ""}
+              {deleting ? `${formatPatrolRoundLabel(virtualRoundMap.get(deleting.id)?.displayRoundNo ?? deleting.run_no, virtualRoundMap.get(deleting.id)?.isVirtual)} | ${userNameById.get(deleting.user_id) ?? deleting.user_id}` : ""}
             </div>
           </div>
         }

@@ -11,26 +11,36 @@ import Button from "@/component/ui/Button";
 import DateHighlightField from "@/component/ui/DateHighlightField";
 import DownloadProgressModal from "@/component/ui/DownloadProgressModal";
 import LoadingStateCard from "@/component/ui/LoadingStateCard";
-import TextField from "@/component/ui/TextField";
 import { ConfirmModalMaster, ErrorModalMaster, SuccessModalMaster } from "@/component/ui/layout/ModalMaster";
 import { estimateDataUrlSizeBytes, formatBytesToKB } from "@/libs/image";
 import { resolveAssetUrl } from "@/libs/asset-url";
 
 import type { Place } from "@/repository/Places";
 import { placeHooks } from "@/repository/Places";
-import type { User } from "@/repository/Users";
-import { userHooks } from "@/repository/Users";
 import type { Shift } from "@/repository/Shifts";
 import { shiftHooks } from "@/repository/Shifts";
+import type { User } from "@/repository/Users";
+import { userHooks } from "@/repository/Users";
 import type { MeResponse } from "@/repository/auth";
 import { me as getMe } from "@/repository/auth";
 import { deletePatrolScan } from "@/repository/patrol-scans";
 import {
   downloadPatrolScanReportCsv,
   listPatrolScanReportDates,
+  listPatrolScanReportRounds,
   listPatrolScanReports,
 } from "@/repository/reports";
 import type { PatrolScanReportRow, ReportDownloadFormat } from "@/repository/reports";
+
+type PatrolScanReportSortColumn = "scanned_at" | "spot_name" | "user_name" | "shift_name" | "note";
+
+const PATROL_SCAN_REPORT_SORT_BY_MAP: Record<PatrolScanReportSortColumn, "scannedAt" | "spotName" | "userName" | "placeName"> = {
+  scanned_at: "scannedAt",
+  spot_name: "spotName",
+  user_name: "userName",
+  shift_name: "placeName",
+  note: "scannedAt",
+};
 
 type AuthSessionUser = {
   id?: string | number;
@@ -83,6 +93,10 @@ function formatDateTime(value: string | null | undefined): string {
   }).format(parsed).replace(/\./g, ":") + " WIB";
 }
 
+function formatRoundLabel(roundNo: number | null | undefined): string {
+  return Number(roundNo) === 0 ? "Tanpa Ronde" : `Ronde ${roundNo ?? "-"}`;
+}
+
 export default function PatrolScanReportsPage() {
   const qc = useQueryClient();
   const searchParams = useSearchParams();
@@ -120,10 +134,17 @@ export default function PatrolScanReportsPage() {
   const shifts = shiftHooks.useList({});
   const [placeId, setPlaceId] = React.useState("");
   const [filterUserId, setFilterUserId] = React.useState("");
-  const [filterRunId, setFilterRunId] = React.useState("");
   const [reportShiftId, setReportShiftId] = React.useState("");
+  const [filterRoundNo, setFilterRoundNo] = React.useState("");
   const [reportFromDate, setReportFromDate] = React.useState("");
   const [reportToDate, setReportToDate] = React.useState("");
+  const [tableState, setTableState] = React.useState<{
+    sortKey: PatrolScanReportSortColumn;
+    sortDirection: "asc" | "desc";
+  }>({
+    sortKey: "scanned_at",
+    sortDirection: "desc",
+  });
   const [reportCalendarMonth, setReportCalendarMonth] = React.useState(() => toDateOnly(new Date().toISOString()).slice(0, 7));
   const [reportFormat, setReportFormat] = React.useState<ReportDownloadFormat>("pdf");
   const [isDownloadingReport, setIsDownloadingReport] = React.useState(false);
@@ -203,32 +224,92 @@ export default function PatrolScanReportsPage() {
     setReportToDate((prev) => (prev.trim() ? prev : availableReportDateRange.max));
   }, [availableReportDateRange.max, availableReportDateRange.min]);
 
-  const reportListQuery = useQuery({
-    queryKey: ["satpam-patrol-scan-report-list-page", placeId, effectiveFilterUserId, filterRunId, reportShiftId, reportFromDate, reportToDate],
+  const roundOptionsQuery = useQuery({
+    queryKey: ["satpam-patrol-scan-report-round-options", placeId, reportShiftId, reportFromDate, reportToDate],
     queryFn: async () =>
-      listPatrolScanReports({
+      listPatrolScanReportRounds({
         placeId: placeId.trim() || undefined,
-        userId: effectiveFilterUserId || undefined,
-        patrolRunId: filterRunId.trim() || undefined,
         shiftId: reportShiftId.trim() || undefined,
-        fromDate: reportFromDate.trim() || undefined,
-        toDate: reportToDate.trim() || undefined,
-        page: 1,
-        pageSize: 10,
-        sortBy: "scannedAt",
-        sortOrder: "desc",
+        fromDate: reportFromDate.trim() || availableReportDateRange.min || undefined,
+        toDate: reportToDate.trim() || availableReportDateRange.max || undefined,
       }),
     enabled: Boolean(placeId.trim()),
   });
+  const availableRounds = React.useMemo(() => {
+    const roundNos = (roundOptionsQuery.data ?? [])
+      .map((item) => item.round_no)
+      .filter((value) => Number.isFinite(value) && value > 0);
+    return Array.from(new Set(roundNos)).sort((a, b) => a - b);
+  }, [roundOptionsQuery.data]);
 
-  const rows = React.useMemo(
+  React.useEffect(() => {
+    if (roundOptionsQuery.isLoading || roundOptionsQuery.isFetching) return;
+    if (!filterRoundNo.trim()) return;
+    if (availableRounds.includes(Number(filterRoundNo))) return;
+    setFilterRoundNo("");
+  }, [availableRounds, filterRoundNo, roundOptionsQuery.isFetching, roundOptionsQuery.isLoading]);
+
+  const reportListQuery = useQuery({
+    queryKey: ["satpam-patrol-scan-report-list-page", placeId, effectiveFilterUserId, reportShiftId, reportFromDate, reportToDate, tableState.sortKey, tableState.sortDirection],
+    queryFn: async () => {
+      const baseParams = {
+        placeId: placeId.trim() || undefined,
+        userId: effectiveFilterUserId || undefined,
+        shiftId: reportShiftId.trim() || undefined,
+        fromDate: reportFromDate.trim() || undefined,
+        toDate: reportToDate.trim() || undefined,
+        pageSize: 100,
+        sortBy: PATROL_SCAN_REPORT_SORT_BY_MAP[tableState.sortKey],
+        sortOrder: tableState.sortDirection,
+      } as const;
+
+      const first = await listPatrolScanReports({
+        ...baseParams,
+        page: 1,
+      });
+
+      const totalPages = Math.max(1, first.pagination?.totalPages ?? 1);
+      if (totalPages <= 1) return first;
+
+      const data = [...(first.data ?? [])];
+      for (let page = 2; page <= totalPages; page += 1) {
+        const next = await listPatrolScanReports({
+          ...baseParams,
+          page,
+        });
+        data.push(...(next.data ?? []));
+      }
+
+      return {
+        ...first,
+        data,
+        pagination: {
+          ...first.pagination,
+          page: 1,
+          pageSize: data.length || 1,
+          totalData: data.length,
+          totalPages: 1,
+        },
+      };
+    },
+    enabled: Boolean(placeId.trim()),
+  });
+
+  const roundNoByRunId = React.useMemo(() => {
+    const map = new Map<string, number>();
+    for (const item of roundOptionsQuery.data ?? []) {
+      map.set(item.patrol_run_id, item.round_no);
+    }
+    return map;
+  }, [roundOptionsQuery.data]);
+  const allRows = React.useMemo(
     () => (reportListQuery.data?.data ?? []).map((row) => ({ ...row, photo_url: resolveAssetUrl(row.photo_url) })),
     [reportListQuery.data?.data],
   );
-  const knownRunIds = React.useMemo(() => {
-    const ids = rows.map((r) => r.patrol_run_id).filter((v): v is string => Boolean(v && v.trim()));
-    return Array.from(new Set(ids)).sort((a, b) => a.localeCompare(b));
-  }, [rows]);
+  const rows = React.useMemo(
+    () => allRows.filter((row) => !filterRoundNo.trim() || roundNoByRunId.get(row.patrol_run_id) === Number(filterRoundNo)),
+    [allRows, filterRoundNo, roundNoByRunId],
+  );
 
   const stopProgressTimer = React.useCallback(() => {
     if (!progressTimerRef.current) return;
@@ -277,8 +358,8 @@ export default function PatrolScanReportsPage() {
         {
           placeId: placeId.trim(),
           userId: effectiveFilterUserId || undefined,
-          patrolRunId: filterRunId.trim() || undefined,
           shiftId: reportShiftId.trim() || undefined,
+          roundNo: filterRoundNo.trim() ? Number(filterRoundNo) : undefined,
           fromDate: resolvedFrom,
           toDate: resolvedTo,
         },
@@ -328,7 +409,6 @@ export default function PatrolScanReportsPage() {
       render: (row) => formatDateTime(row.scanned_at),
       sortValue: (row) => (row.scanned_at ? new Date(row.scanned_at) : null),
     },
-    { key: "patrol_run_id", header: "Run ID / Bucket ID", sortable: true, className: "min-w-[220px]" },
     {
       key: "spot_name",
       header: "Spot",
@@ -404,7 +484,7 @@ export default function PatrolScanReportsPage() {
         }
       />
 
-      <div className="mb-3 grid gap-3 app-glass rounded-[24px] p-3 shadow-[0_16px_34px_rgba(76,99,168,0.12)] sm:grid-cols-3">
+      <div className="mb-3 grid gap-3 app-glass rounded-[24px] p-3 shadow-[0_16px_34px_rgba(76,99,168,0.12)] sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
         <label className="block">
           <span className="mb-1 block text-[13px] font-medium text-slate-800">Place</span>
           <select value={placeId} onChange={(e) => setPlaceId(e.target.value)} className="w-full rounded-xl border border-white/70 bg-white/85 px-3.5 py-3 text-[13px] text-slate-900 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)] outline-none focus:border-sky-400/60 focus:bg-white focus:ring-4 focus:ring-sky-400/15">
@@ -413,35 +493,27 @@ export default function PatrolScanReportsPage() {
         </label>
         <label className="block">
           <span className="mb-1 block text-[13px] font-medium text-slate-800">User</span>
-          <select value={filterUserId} onChange={(e) => setFilterUserId(e.target.value)} disabled={isGuard} className="w-full rounded-xl border border-white/70 bg-white/85 px-3.5 py-3 text-[13px] text-slate-900 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)] outline-none focus:border-sky-400/60 focus:bg-white focus:ring-4 focus:ring-sky-400/15">
+          <select value={filterUserId} onChange={(e) => { setFilterUserId(e.target.value); }} disabled={isGuard} className="w-full rounded-xl border border-white/70 bg-white/85 px-3.5 py-3 text-[13px] text-slate-900 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)] outline-none focus:border-sky-400/60 focus:bg-white focus:ring-4 focus:ring-sky-400/15">
             {!isGuard ? <option value="">All</option> : null}
             {userRows.map((u) => <option key={u.id} value={u.id}>{u.full_name} ({u.username})</option>)}
           </select>
         </label>
-        <TextField
-          list="patrol-report-run-id-options"
-          label="Run ID / Bucket ID"
-          value={filterRunId}
-          onChange={(e) => setFilterRunId(e.target.value)}
-          placeholder="RUN-2026-03-03-001"
-        />
-      </div>
-      <datalist id="patrol-report-run-id-options">
-        {knownRunIds.map((runId) => (
-          <option key={runId} value={runId} />
-        ))}
-      </datalist>
-
-      <div className="mb-3 grid gap-3 app-glass rounded-[24px] p-3 shadow-[0_16px_34px_rgba(76,99,168,0.12)] sm:grid-cols-3">
         <label className="block">
           <span className="mb-1 block text-[13px] font-medium text-slate-800">Shift</span>
-          <select value={reportShiftId} onChange={(e) => setReportShiftId(e.target.value)} disabled={!placeId.trim()} className="w-full rounded-xl border border-white/70 bg-white/85 px-3.5 py-3 text-[13px] text-slate-900 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)] outline-none focus:border-sky-400/60 focus:bg-white focus:ring-4 focus:ring-sky-400/15">
+          <select value={reportShiftId} onChange={(e) => { setReportShiftId(e.target.value); }} disabled={!placeId.trim()} className="w-full rounded-xl border border-white/70 bg-white/85 px-3.5 py-3 text-[13px] text-slate-900 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)] outline-none focus:border-sky-400/60 focus:bg-white focus:ring-4 focus:ring-sky-400/15">
             <option value="">All</option>
             {shiftRows.map((shift) => <option key={shift.id} value={shift.id}>{shift.name} ({shift.start_time} - {shift.end_time})</option>)}
           </select>
         </label>
-        <DateHighlightField label="From Date" value={reportFromDate} min={availableReportDateRange.min || undefined} max={reportToDate.trim() || availableReportDateRange.max || undefined} availableDates={availableReportDates} onVisibleMonthChange={setReportCalendarMonth} onChange={setReportFromDate} />
-        <DateHighlightField label="To Date" value={reportToDate} min={reportFromDate.trim() || availableReportDateRange.min || undefined} max={availableReportDateRange.max || undefined} availableDates={availableReportDates} onVisibleMonthChange={setReportCalendarMonth} onChange={setReportToDate} />
+        <DateHighlightField label="From Date" value={reportFromDate} min={availableReportDateRange.min || undefined} max={reportToDate.trim() || availableReportDateRange.max || undefined} availableDates={availableReportDates} onVisibleMonthChange={setReportCalendarMonth} onChange={(value) => { setReportFromDate(value); }} />
+        <DateHighlightField label="To Date" value={reportToDate} min={reportFromDate.trim() || availableReportDateRange.min || undefined} max={availableReportDateRange.max || undefined} availableDates={availableReportDates} onVisibleMonthChange={setReportCalendarMonth} onChange={(value) => { setReportToDate(value); }} />
+        <label className="block">
+          <span className="mb-1 block text-[13px] font-medium text-slate-800">Ronde</span>
+          <select value={filterRoundNo} onChange={(e) => { setFilterRoundNo(e.target.value); }} disabled={!placeId.trim() || roundOptionsQuery.isLoading} className="w-full rounded-xl border border-white/70 bg-white/85 px-3.5 py-3 text-[13px] text-slate-900 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)] outline-none focus:border-sky-400/60 focus:bg-white focus:ring-4 focus:ring-sky-400/15">
+            <option value="">All</option>
+            {availableRounds.map((roundNo) => <option key={roundNo} value={roundNo}>{formatRoundLabel(roundNo)}</option>)}
+          </select>
+        </label>
       </div>
 
       <div className="space-y-3">
@@ -454,7 +526,22 @@ export default function PatrolScanReportsPage() {
             {reportListQuery.error instanceof Error ? reportListQuery.error.message : "Gagal load laporan scan."}
           </div>
         ) : (
-          <MasterTable columns={columns} data={rows} getRowKey={(row) => row.id} defaultPageSize={10} emptyMessage="Belum ada data laporan scan." />
+          <MasterTable
+            columns={columns}
+            data={rows}
+            getRowKey={(row) => row.id}
+            defaultPageSize={10}
+            emptyMessage="Belum ada data laporan scan."
+            disableClientSearch
+            serverSorting={{
+              sortKey: tableState.sortKey,
+              sortDirection: tableState.sortDirection,
+              onSortChange: (sortKey, sortDirection) => {
+                if (sortKey !== "scanned_at" && sortKey !== "spot_name" && sortKey !== "user_name" && sortKey !== "shift_name" && sortKey !== "note") return;
+                setTableState((prev) => ({ ...prev, page: 1, sortKey, sortDirection }));
+              },
+            }}
+          />
         )}
       </div>
 

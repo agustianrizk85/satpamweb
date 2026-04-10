@@ -8,6 +8,7 @@ import { useRouter } from "next/navigation";
 import PageHeader from "@/component/ui/PageHeader";
 import MasterTable, { type MasterTableColumn } from "@/component/ui/MasterTable";
 import Button from "@/component/ui/Button";
+import DateHighlightField from "@/component/ui/DateHighlightField";
 import TextField from "@/component/ui/TextField";
 import LoadingStateCard from "@/component/ui/LoadingStateCard";
 import { ConfirmModalMaster, ErrorModalMaster, SuccessModalMaster } from "@/component/ui/layout/ModalMaster";
@@ -26,6 +27,7 @@ import { spotHooks } from "@/repository/Spots";
 
 import type { PatrolScan, PatrolScanCreate } from "@/repository/patrol-scans";
 import { createPatrolScan, listPatrolScans } from "@/repository/patrol-scans";
+import { listPatrolScanReportDates } from "@/repository/reports";
 
 type FormState = {
   spotId: string;
@@ -112,6 +114,16 @@ function formatPatrolScanDateTime(value: string | null | undefined): string {
   }).format(parsed).replace(/\./g, ":") + " WIB";
 }
 
+function toDateOnly(value: string | null | undefined): string {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "";
+  const direct = raw.match(/^\d{4}-\d{2}-\d{2}/);
+  if (direct?.[0]) return direct[0];
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return "";
+  return parsed.toISOString().slice(0, 10);
+}
+
 export default function PatrolScansPage() {
   const qc = useQueryClient();
   const router = useRouter();
@@ -148,6 +160,9 @@ export default function PatrolScansPage() {
   const [placeId, setPlaceId] = React.useState("");
   const [filterUserId, setFilterUserId] = React.useState("");
   const [filterRunId, setFilterRunId] = React.useState("");
+  const [fromDate, setFromDate] = React.useState("");
+  const [toDate, setToDate] = React.useState("");
+  const [calendarMonth, setCalendarMonth] = React.useState(() => toDateOnly(new Date().toISOString()).slice(0, 7));
   const [tableState, setTableState] = React.useState<{
     page: number;
     pageSize: number;
@@ -203,13 +218,29 @@ export default function PatrolScansPage() {
     return spotRows.filter((s) => s.place_id === pid);
   }, [placeId, spotRows]);
 
+  const scanMonthDatesQuery = useQuery({
+    queryKey: ["satpam-patrol-scans-dates-page", placeId, calendarMonth],
+    queryFn: async () => listPatrolScanReportDates({ placeId: placeId.trim(), month: calendarMonth }),
+    enabled: Boolean(placeId.trim()),
+  });
+  const availableScanDateRange = React.useMemo(() => ({
+    min: scanMonthDatesQuery.data?.min_date ?? "",
+    max: scanMonthDatesQuery.data?.max_date ?? "",
+  }), [scanMonthDatesQuery.data?.max_date, scanMonthDatesQuery.data?.min_date]);
+  const availableScanDates = React.useMemo(
+    () => Array.from(new Set((scanMonthDatesQuery.data?.dates ?? []).map((date) => toDateOnly(date)).filter(Boolean))).sort(),
+    [scanMonthDatesQuery.data?.dates],
+  );
+
   const listQuery = useQuery({
-    queryKey: ["satpam-patrol-scans", placeId, effectiveFilterUserId, filterRunId, tableState.page, tableState.pageSize, tableState.sortKey, tableState.sortDirection],
+    queryKey: ["satpam-patrol-scans", placeId, effectiveFilterUserId, filterRunId, fromDate, toDate, tableState.page, tableState.pageSize, tableState.sortKey, tableState.sortDirection],
     queryFn: async () =>
       listPatrolScans({
         placeId,
         userId: effectiveFilterUserId || undefined,
         patrolRunId: filterRunId.trim() ? filterRunId.trim() : undefined,
+        fromDate: fromDate.trim() || undefined,
+        toDate: toDate.trim() || undefined,
         page: tableState.page,
         pageSize: tableState.pageSize,
         sortBy: PATROL_SCAN_SORT_BY_MAP[tableState.sortKey],
@@ -221,7 +252,7 @@ export default function PatrolScansPage() {
   const createMut = useMutation({
     mutationFn: async (body: PatrolScanCreate) => createPatrolScan(body),
     onSuccess: async () => {
-      await qc.invalidateQueries({ queryKey: ["satpam-patrol-scans", placeId, effectiveFilterUserId, filterRunId] });
+      await qc.invalidateQueries({ queryKey: ["satpam-patrol-scans", placeId, effectiveFilterUserId, filterRunId, fromDate, toDate] });
     },
   });
 
@@ -281,9 +312,11 @@ export default function PatrolScansPage() {
     const params = new URLSearchParams();
     if (placeId.trim()) params.set("placeId", placeId.trim());
     if (effectiveFilterUserId) params.set("userId", effectiveFilterUserId);
+    if (fromDate.trim()) params.set("fromDate", fromDate.trim());
+    if (toDate.trim()) params.set("toDate", toDate.trim());
     const query = params.toString();
     router.push(query ? `/web/patrol-scan-reports?${query}` : "/web/patrol-scan-reports");
-  }, [effectiveFilterUserId, placeId, router]);
+  }, [effectiveFilterUserId, fromDate, placeId, router, toDate]);
 
   const onPickPhoto = async (file: File | null) => {
     if (!file) {
@@ -372,7 +405,7 @@ export default function PatrolScansPage() {
         }
       />
 
-      <div className="mb-3 grid gap-3 app-glass rounded-[24px] p-3 shadow-[0_16px_34px_rgba(76,99,168,0.12)] sm:grid-cols-3">
+      <div className="mb-3 grid gap-3 app-glass rounded-[24px] p-3 shadow-[0_16px_34px_rgba(76,99,168,0.12)] sm:grid-cols-2 xl:grid-cols-5">
         <label className="block">
           <span className="mb-1 block text-[13px] font-medium text-slate-800">Place</span>
           <select
@@ -381,6 +414,8 @@ export default function PatrolScansPage() {
               setPlaceId(e.target.value);
               setFilterUserId(isGuard ? ownUserId : "");
               setFilterRunId("");
+              setFromDate("");
+              setToDate("");
               setTableState((prev) => ({ ...prev, page: 1 }));
             }}
             className="w-full rounded-xl border border-white/70 bg-white/85 px-3.5 py-3 text-[13px] text-slate-900 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)] outline-none focus:border-sky-400/60 focus:bg-white focus:ring-4 focus:ring-sky-400/15"
@@ -422,6 +457,30 @@ export default function PatrolScansPage() {
             setTableState((prev) => ({ ...prev, page: 1 }));
           }}
           placeholder="RUN-2026-03-03-001"
+        />
+        <DateHighlightField
+          label="From Date"
+          value={fromDate}
+          min={availableScanDateRange.min || undefined}
+          max={toDate.trim() || availableScanDateRange.max || undefined}
+          availableDates={availableScanDates}
+          onVisibleMonthChange={setCalendarMonth}
+          onChange={(value) => {
+            setFromDate(value);
+            setTableState((prev) => ({ ...prev, page: 1 }));
+          }}
+        />
+        <DateHighlightField
+          label="To Date"
+          value={toDate}
+          min={fromDate.trim() || availableScanDateRange.min || undefined}
+          max={availableScanDateRange.max || undefined}
+          availableDates={availableScanDates}
+          onVisibleMonthChange={setCalendarMonth}
+          onChange={(value) => {
+            setToDate(value);
+            setTableState((prev) => ({ ...prev, page: 1 }));
+          }}
         />
       </div>
       <datalist id="patrol-run-id-options">
