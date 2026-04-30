@@ -32,8 +32,107 @@ const FACILITY_SPOT_SORT_BY_MAP: Record<FacilitySpotSortColumn, "spotCode" | "sp
   is_active: "isActive",
 };
 
+const PDF_PAGE_WIDTH = 595.28;
+const PDF_PAGE_HEIGHT = 841.89;
+const PDF_MARGIN = 36;
+const PDF_CARD_WIDTH = 252;
+const PDF_CARD_HEIGHT = 222;
+const PDF_QR_SIZE = 118;
+
 function resolveFacilitySpotQrPayload(row: FacilityCheckSpot): string {
   return row.id;
+}
+
+function escapePdfText(value: string): string {
+  return value.replace(/\\/g, "\\\\").replace(/\(/g, "\\(").replace(/\)/g, "\\)");
+}
+
+function sanitizeFilename(value: string): string {
+  const cleaned = value.trim().replace(/[^a-z0-9-_]+/gi, "-").replace(/^-+|-+$/g, "");
+  return cleaned || "facility-spots";
+}
+
+function drawPdfText(text: string, x: number, y: number, size: number, color = "0 0 0"): string {
+  return `BT /F1 ${size} Tf ${color} rg ${x.toFixed(2)} ${y.toFixed(2)} Td (${escapePdfText(text)}) Tj ET\n`;
+}
+
+function drawFacilitySpotQr(row: FacilityCheckSpot, x: number, yTop: number): string {
+  const qr = QRCode.create(resolveFacilitySpotQrPayload(row), { errorCorrectionLevel: "M" });
+  const moduleSize = PDF_QR_SIZE / qr.modules.size;
+  const qrX = x + (PDF_CARD_WIDTH - PDF_QR_SIZE) / 2;
+  const qrTop = yTop - 54;
+  let out = "";
+
+  out += "0.93 0.95 0.98 rg\n";
+  out += `${x.toFixed(2)} ${(yTop - PDF_CARD_HEIGHT).toFixed(2)} ${PDF_CARD_WIDTH.toFixed(2)} ${PDF_CARD_HEIGHT.toFixed(2)} re f\n`;
+  out += "1 1 1 rg\n";
+  out += `${(qrX - 8).toFixed(2)} ${(qrTop - PDF_QR_SIZE - 8).toFixed(2)} ${(PDF_QR_SIZE + 16).toFixed(2)} ${(PDF_QR_SIZE + 16).toFixed(2)} re f\n`;
+  out += drawPdfText(row.spot_name || "-", x + 14, yTop - 24, 13);
+  out += drawPdfText(row.spot_code || "-", x + 14, yTop - 42, 9, "0.25 0.29 0.36");
+  out += "0 0 0 rg\n";
+
+  for (let rowIndex = 0; rowIndex < qr.modules.size; rowIndex += 1) {
+    for (let colIndex = 0; colIndex < qr.modules.size; colIndex += 1) {
+      if (!qr.modules.get(rowIndex, colIndex)) continue;
+      const rectX = qrX + colIndex * moduleSize;
+      const rectY = qrTop - (rowIndex + 1) * moduleSize;
+      out += `${rectX.toFixed(2)} ${rectY.toFixed(2)} ${moduleSize.toFixed(2)} ${moduleSize.toFixed(2)} re f\n`;
+    }
+  }
+
+  out += drawPdfText(`Payload: ${resolveFacilitySpotQrPayload(row)}`, x + 14, yTop - 196, 7, "0.35 0.39 0.46");
+  out += drawPdfText(row.is_active ? "ACTIVE" : "INACTIVE", x + 14, yTop - 210, 8, row.is_active ? "0 0.45 0.22" : "0.65 0.1 0.1");
+  return out;
+}
+
+function buildFacilitySpotQrPdf(rows: FacilityCheckSpot[], placeLabel: string): Blob {
+  const cardsPerPage = 6;
+  const pages: string[] = [];
+
+  for (let pageStart = 0; pageStart < rows.length; pageStart += cardsPerPage) {
+    const pageRows = rows.slice(pageStart, pageStart + cardsPerPage);
+    let content = drawPdfText("Facility Spot QR", PDF_MARGIN, PDF_PAGE_HEIGHT - 32, 17);
+    content += drawPdfText(placeLabel, PDF_MARGIN, PDF_PAGE_HEIGHT - 50, 10, "0.25 0.29 0.36");
+
+    pageRows.forEach((row, index) => {
+      const col = index % 2;
+      const line = Math.floor(index / 2);
+      const x = PDF_MARGIN + col * (PDF_CARD_WIDTH + 19);
+      const yTop = PDF_PAGE_HEIGHT - 78 - line * (PDF_CARD_HEIGHT + 16);
+      content += drawFacilitySpotQr(row, x, yTop);
+    });
+
+    pages.push(content);
+  }
+
+  const objects: string[] = [];
+  objects.push("<< /Type /Catalog /Pages 2 0 R >>");
+  const pageObjectIds = pages.map((_, i) => 4 + i * 2);
+  objects.push(`<< /Type /Pages /Kids [${pageObjectIds.map((id) => `${id} 0 R`).join(" ")}] /Count ${pages.length} >>`);
+  objects.push("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>");
+
+  pages.forEach((content, i) => {
+    const pageObjId = 4 + i * 2;
+    const contentObjId = pageObjId + 1;
+    objects.push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${PDF_PAGE_WIDTH} ${PDF_PAGE_HEIGHT}] /Resources << /Font << /F1 3 0 R >> >> /Contents ${contentObjId} 0 R >>`);
+    objects.push(`<< /Length ${content.length} >>\nstream\n${content}endstream`);
+  });
+
+  let pdf = "%PDF-1.4\n";
+  const offsets: number[] = [0];
+  objects.forEach((obj, index) => {
+    offsets.push(pdf.length);
+    pdf += `${index + 1} 0 obj\n${obj}\nendobj\n`;
+  });
+
+  const xrefOffset = pdf.length;
+  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  for (let i = 1; i < offsets.length; i += 1) {
+    pdf += `${String(offsets[i]).padStart(10, "0")} 00000 n \n`;
+  }
+  pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`;
+
+  return new Blob([pdf], { type: "application/pdf" });
 }
 
 function toCreatePayload(placeId: string, s: FormState): FacilityCheckSpotCreate {
@@ -118,6 +217,7 @@ export default function FacilitySpotsPage() {
   const [qrViewSpot, setQrViewSpot] = React.useState<FacilityCheckSpot | null>(null);
   const [qrImageDataUrl, setQrImageDataUrl] = React.useState("");
   const [qrBusy, setQrBusy] = React.useState(false);
+  const [exportBusy, setExportBusy] = React.useState(false);
 
   const onClickCreate = () => {
     setMode("create");
@@ -230,6 +330,40 @@ export default function FacilitySpotsPage() {
     [generateQrImage],
   );
 
+  const onClickExportPdf = React.useCallback(async () => {
+    try {
+      if (!placeId.trim()) throw new Error("Place wajib dipilih.");
+      setExportBusy(true);
+      const exportRows = await listFacilitySpots({
+        placeId,
+        sortBy: FACILITY_SPOT_SORT_BY_MAP[tableState.sortKey],
+        sortOrder: tableState.sortDirection,
+      });
+      if (exportRows.length === 0) throw new Error("Belum ada facility spot untuk diexport.");
+
+      const selectedPlace = placeRows.find((p) => p.id === placeId);
+      const placeLabel = selectedPlace ? `${selectedPlace.place_name} (${selectedPlace.place_code})` : "All facility spots";
+      const blob = buildFacilitySpotQrPdf(exportRows, placeLabel);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${sanitizeFilename(`facility-spots-${selectedPlace?.place_code ?? placeId}`)}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      setFeedbackVariant("create");
+      setSuccessText("PDF barcode facility spot berhasil diunduh.");
+      setSuccessOpen(true);
+    } catch (e) {
+      setFeedbackVariant("create");
+      setErrorText(e instanceof Error ? e.message : "Gagal export PDF barcode.");
+      setErrorOpen(true);
+    } finally {
+      setExportBusy(false);
+    }
+  }, [placeId, placeRows, tableState.sortDirection, tableState.sortKey]);
+
   const columns = React.useMemo<readonly MasterTableColumn<FacilityCheckSpot>[]>(() => {
     return [
       { key: "spot_code", header: "Code", sortable: true, className: "w-[200px]" },
@@ -270,7 +404,16 @@ export default function FacilitySpotsPage() {
       <PageHeader
         title="Facility Spots"
         description="Template spot untuk checklist facility per place."
-        actions={<Button onClick={onClickCreate} disabled={!placeId.trim()}>+ Create</Button>}
+        actions={
+          <div className="flex items-center gap-2">
+            <Button variant="secondary" onClick={() => void onClickExportPdf()} disabled={!placeId.trim() || exportBusy}>
+              {exportBusy ? "Exporting..." : "Export PDF"}
+            </Button>
+            <Button onClick={onClickCreate} disabled={!placeId.trim()}>
+              + Create
+            </Button>
+          </div>
+        }
       />
 
       <div className="mb-3 app-glass rounded-[24px] p-3 shadow-[0_16px_34px_rgba(76,99,168,0.12)]">

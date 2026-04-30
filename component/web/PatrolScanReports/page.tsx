@@ -139,9 +139,13 @@ export default function PatrolScanReportsPage() {
   const [reportFromDate, setReportFromDate] = React.useState("");
   const [reportToDate, setReportToDate] = React.useState("");
   const [tableState, setTableState] = React.useState<{
+    page: number;
+    pageSize: number;
     sortKey: PatrolScanReportSortColumn;
     sortDirection: "asc" | "desc";
   }>({
+    page: 1,
+    pageSize: 10,
     sortKey: "scanned_at",
     sortDirection: "desc",
   });
@@ -249,66 +253,43 @@ export default function PatrolScanReportsPage() {
     setFilterRoundNo("");
   }, [availableRounds, filterRoundNo, roundOptionsQuery.isFetching, roundOptionsQuery.isLoading]);
 
+  React.useEffect(() => {
+    setTableState((prev) => ({ ...prev, page: 1 }));
+  }, [placeId, effectiveFilterUserId, reportShiftId, filterRoundNo, reportFromDate, reportToDate]);
+
   const reportListQuery = useQuery({
-    queryKey: ["satpam-patrol-scan-report-list-page", placeId, effectiveFilterUserId, reportShiftId, reportFromDate, reportToDate, tableState.sortKey, tableState.sortDirection],
-    queryFn: async () => {
-      const baseParams = {
+    queryKey: [
+      "satpam-patrol-scan-report-list-page",
+      placeId,
+      effectiveFilterUserId,
+      reportShiftId,
+      filterRoundNo,
+      reportFromDate,
+      reportToDate,
+      tableState.page,
+      tableState.pageSize,
+      tableState.sortKey,
+      tableState.sortDirection,
+    ],
+    queryFn: async () =>
+      listPatrolScanReports({
         placeId: placeId.trim() || undefined,
         userId: effectiveFilterUserId || undefined,
         shiftId: reportShiftId.trim() || undefined,
+        roundNo: filterRoundNo.trim() ? Number(filterRoundNo) : undefined,
         fromDate: reportFromDate.trim() || undefined,
         toDate: reportToDate.trim() || undefined,
-        pageSize: 100,
+        page: tableState.page,
+        pageSize: tableState.pageSize,
         sortBy: PATROL_SCAN_REPORT_SORT_BY_MAP[tableState.sortKey],
         sortOrder: tableState.sortDirection,
-      } as const;
-
-      const first = await listPatrolScanReports({
-        ...baseParams,
-        page: 1,
-      });
-
-      const totalPages = Math.max(1, first.pagination?.totalPages ?? 1);
-      if (totalPages <= 1) return first;
-
-      const data = [...(first.data ?? [])];
-      for (let page = 2; page <= totalPages; page += 1) {
-        const next = await listPatrolScanReports({
-          ...baseParams,
-          page,
-        });
-        data.push(...(next.data ?? []));
-      }
-
-      return {
-        ...first,
-        data,
-        pagination: {
-          ...first.pagination,
-          page: 1,
-          pageSize: data.length || 1,
-          totalData: data.length,
-          totalPages: 1,
-        },
-      };
-    },
+      }),
     enabled: Boolean(placeId.trim()),
   });
 
-  const roundNoByRunId = React.useMemo(() => {
-    const map = new Map<string, number>();
-    for (const item of roundOptionsQuery.data ?? []) {
-      map.set(item.patrol_run_id, item.round_no);
-    }
-    return map;
-  }, [roundOptionsQuery.data]);
-  const allRows = React.useMemo(
+  const rows = React.useMemo(
     () => (reportListQuery.data?.data ?? []).map((row) => ({ ...row, photo_url: resolveAssetUrl(row.photo_url) })),
     [reportListQuery.data?.data],
-  );
-  const rows = React.useMemo(
-    () => allRows.filter((row) => !filterRoundNo.trim() || roundNoByRunId.get(row.patrol_run_id) === Number(filterRoundNo)),
-    [allRows, filterRoundNo, roundNoByRunId],
   );
 
   const stopProgressTimer = React.useCallback(() => {
@@ -533,6 +514,14 @@ export default function PatrolScanReportsPage() {
             defaultPageSize={10}
             emptyMessage="Belum ada data laporan scan."
             disableClientSearch
+            serverPagination={{
+              page: reportListQuery.data?.pagination?.page ?? tableState.page,
+              pageSize: reportListQuery.data?.pagination?.pageSize ?? tableState.pageSize,
+              totalData: reportListQuery.data?.pagination?.totalData ?? 0,
+              totalPages: reportListQuery.data?.pagination?.totalPages ?? 1,
+              onPageChange: (page) => setTableState((prev) => ({ ...prev, page })),
+              onPageSizeChange: (pageSize) => setTableState((prev) => ({ ...prev, page: 1, pageSize })),
+            }}
             serverSorting={{
               sortKey: tableState.sortKey,
               sortDirection: tableState.sortDirection,
