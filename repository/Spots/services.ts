@@ -2,7 +2,7 @@ import { createHttpAgent } from "@/libs/http";
 import { createCrudHooksV2 } from "@/libs/query-agent";
 import type { CreatedIdResponse, Spot, SpotCreate, SpotPatch } from "./model";
 
-const agent = createHttpAgent({ basePath: "/api/v1/spots", auth: true });
+export const agent = createHttpAgent({ basePath: "/api/v1/spots", auth: true });
 
 export const spotHooks = createCrudHooksV2<Spot[], Spot, SpotCreate, SpotPatch>({
   agent,

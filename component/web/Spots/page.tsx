@@ -9,12 +9,14 @@ import Button from "@/component/ui/Button";
 import LoadingStateCard from "@/component/ui/LoadingStateCard";
 import TextField from "@/component/ui/TextField";
 import { ConfirmModalMaster, ErrorModalMaster, SuccessModalMaster } from "@/component/ui/layout/ModalMaster";
-import { readListMeta } from "@/libs/list-meta";
+import { readListMeta, extractListMetaFromEnvelope } from "@/libs/list-meta";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
 
 import type { Place } from "@/repository/Places";
 import { placeHooks } from "@/repository/Places";
 import type { Spot, SpotCreate, SpotPatch, SpotStatus } from "@/repository/Spots";
-import { spotHooks } from "@/repository/Spots";
+import { agent, spotHooks } from "@/repository/Spots";
 
 type FormState = {
   placeId: string;
@@ -84,12 +86,14 @@ export default function SpotsPage() {
     sortKey: "code",
     sortDirection: "asc",
   });
+  const [filterPlaceId, setFilterPlaceId] = React.useState("");
 
   const list = spotHooks.useList({
     page: tableState.page,
     pageSize: tableState.pageSize,
     sortBy: SPOT_SORT_BY_MAP[tableState.sortKey],
     sortOrder: tableState.sortDirection,
+    placeId: filterPlaceId || undefined,
   });
 
   const createMut = spotHooks.useCreate();
@@ -138,6 +142,7 @@ export default function SpotsPage() {
   const [qrViewSpot, setQrViewSpot] = React.useState<Spot | null>(null);
   const [qrImageDataUrl, setQrImageDataUrl] = React.useState("");
   const [qrBusy, setQrBusy] = React.useState(false);
+  const [isExporting, setIsExporting] = React.useState(false);
 
   const onClickCreate = () => {
     const defaultPlaceId = placeRows[0]?.id ?? "";
@@ -218,6 +223,114 @@ export default function SpotsPage() {
     },
     [generateQrImage],
   );
+
+  const onClickExportPdf = async () => {
+    try {
+      setIsExporting(true);
+      
+      const spotsToExport: Spot[] = [];
+      let currentPage = 1;
+      let totalPages = 1;
+      
+      // Loop to fetch all pages
+      do {
+        const response = await agent.get<any>("", {
+          query: {
+            page: currentPage,
+            pageSize: 100, // Ambil 100 per halaman biar cepat
+            sortBy: "spotCode",
+            sortOrder: "asc",
+            placeId: filterPlaceId || undefined,
+          }
+        });
+
+        const meta = extractListMetaFromEnvelope(response);
+        const result = response as any;
+        const pageData = result.data ?? result ?? [];
+        
+        if (Array.isArray(pageData)) {
+          spotsToExport.push(...pageData);
+        }
+        
+        totalPages = meta?.pagination?.totalPages ?? 1;
+        currentPage++;
+      } while (currentPage <= totalPages);
+      
+      if (spotsToExport.length === 0) {
+        throw new Error("Tidak ada data untuk diexport.");
+      }
+
+      const doc = new jsPDF();
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+      
+      doc.setFontSize(16);
+      doc.text("Daftar QR Code Spots", pageWidth / 2, 15, { align: "center" });
+      doc.setFontSize(10);
+      doc.text(`Total: ${spotsToExport.length} Spot | Dicetak: ${new Date().toLocaleString()}`, pageWidth / 2, 22, { align: "center" });
+
+      const qrSize = 45;
+      const marginX = 15;
+      const marginY = 30;
+      const gapX = 15;
+      const gapY = 25;
+      const cols = 3;
+      
+      let currentX = marginX;
+      let currentY = marginY;
+      let colCount = 0;
+
+      for (let i = 0; i < spotsToExport.length; i++) {
+        const spot = spotsToExport[i];
+        
+        // Generate QR DataURL
+        const qrDataUrl = await generateQrImage(spot);
+        
+        // Check if we need a new page
+        if (currentY + qrSize + 15 > pageHeight) {
+          doc.addPage();
+          currentY = 20;
+          currentX = marginX;
+          colCount = 0;
+        }
+
+        // Draw QR
+        doc.addImage(qrDataUrl, "PNG", currentX, currentY, qrSize, qrSize);
+        
+        // Draw Labels
+        doc.setFontSize(9);
+        doc.setFont("helvetica", "bold");
+        const nameLabel = spot.name ?? spot.spot_name ?? "-";
+        const codeLabel = spot.code ?? spot.spot_code ?? "-";
+        
+        // Truncate name if too long
+        const truncatedName = nameLabel.length > 25 ? nameLabel.substring(0, 22) + "..." : nameLabel;
+        
+        doc.text(truncatedName, currentX + qrSize / 2, currentY + qrSize + 5, { align: "center" });
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(8);
+        doc.text(codeLabel, currentX + qrSize / 2, currentY + qrSize + 10, { align: "center" });
+
+        // Move to next position
+        colCount++;
+        if (colCount >= cols) {
+          colCount = 0;
+          currentX = marginX;
+          currentY += qrSize + gapY;
+        } else {
+          currentX += qrSize + gapX;
+        }
+      }
+
+      doc.save(`QR_Spots_${new Date().getTime()}.pdf`);
+    } catch (e) {
+      console.error(e);
+      setErrorText(e instanceof Error ? e.message : "Gagal export PDF.");
+      setErrorOpen(true);
+    } finally {
+      setIsExporting(false);
+    }
+  };
 
   const submit = async () => {
     try {
@@ -309,7 +422,33 @@ export default function SpotsPage() {
 
   return (
     <>
-      <PageHeader title="Spots" description="Master spot di dalam place." actions={<Button onClick={onClickCreate}>+ Create</Button>} />
+      <PageHeader
+        title="Spots"
+        description="Master spot di dalam place."
+        actions={
+          <div className="flex items-center gap-2">
+            <select
+              value={filterPlaceId}
+              onChange={(e) => {
+                setFilterPlaceId(e.target.value);
+                setTableState((prev) => ({ ...prev, page: 1 }));
+              }}
+              className="h-10 rounded-xl border border-neutral-200 bg-white px-3 text-[13px] text-slate-900 outline-none focus:border-sky-400 focus:ring-4 focus:ring-sky-400/10"
+            >
+              <option value="">Semua Place</option>
+              {placeRows.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.place_name}
+                </option>
+              ))}
+            </select>
+            <Button variant="secondary" onClick={onClickExportPdf} disabled={isExporting}>
+              {isExporting ? "Exporting..." : "Export PDF QR"}
+            </Button>
+            <Button onClick={onClickCreate}>+ Create</Button>
+          </div>
+        }
+      />
 
       <div className="space-y-3">
         {placesLoading ? (
