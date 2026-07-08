@@ -39,6 +39,28 @@ export async function createPatrolScan(body: PatrolScanCreate): Promise<CreatedI
   return agent.post<CreatedIdResponse>("", body);
 }
 
+export type BulkSeedPatrolScansBody = {
+  placeId: string;
+  userId: string;
+  dates: string[];
+  count: number;
+  photoMode?: "user" | "picsum" | "none";
+  source?: "MOBILE_APP" | "WEB_DASHBOARD" | "MANUAL_CORRECTION";
+};
+
+export type BulkSeedPatrolScansResult = {
+  runsCreated: number;
+  scansCreated: number;
+  dates: string[];
+  photoSource: string;
+  placeCode: string;
+  username: string;
+};
+
+export async function bulkSeedPatrolScans(body: BulkSeedPatrolScansBody): Promise<BulkSeedPatrolScansResult> {
+  return agent.post<BulkSeedPatrolScansResult>("/bulk-seed", body);
+}
+
 export async function deletePatrolScan(id: string): Promise<CreatedIdResponse> {
   return agent.delete<CreatedIdResponse>(`/${id}`);
 }

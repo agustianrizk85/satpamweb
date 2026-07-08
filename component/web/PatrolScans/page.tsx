@@ -25,8 +25,8 @@ import { me as getMe } from "@/repository/auth";
 import type { Spot } from "@/repository/Spots";
 import { spotHooks } from "@/repository/Spots";
 
-import type { PatrolScan, PatrolScanCreate } from "@/repository/patrol-scans";
-import { createPatrolScan, listPatrolScans } from "@/repository/patrol-scans";
+import type { PatrolScan, PatrolScanCreate, BulkSeedPatrolScansResult } from "@/repository/patrol-scans";
+import { createPatrolScan, listPatrolScans, bulkSeedPatrolScans } from "@/repository/patrol-scans";
 import { listPatrolScanReportDates } from "@/repository/reports";
 
 type FormState = {
@@ -256,6 +256,27 @@ export default function PatrolScansPage() {
     },
   });
 
+  const seedMut = useMutation({
+    mutationFn: async (): Promise<BulkSeedPatrolScansResult> => {
+      const uid = seedUserId.trim();
+      if (!placeId.trim()) throw new Error("Place wajib dipilih.");
+      if (!uid) throw new Error("User wajib dipilih.");
+      if (seedDates.length === 0) throw new Error("Minimal pilih 1 tanggal.");
+      if (seedCount < 1 || seedCount > 500) throw new Error("Jumlah per tanggal harus 1–500.");
+      return bulkSeedPatrolScans({
+        placeId: placeId.trim(),
+        userId: uid,
+        dates: seedDates,
+        count: seedCount,
+        photoMode: seedPhotoMode,
+      });
+    },
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: ["satpam-patrol-scans", placeId] });
+      await qc.invalidateQueries({ queryKey: ["satpam-patrol-scans-dates-page", placeId] });
+    },
+  });
+
   const rows = React.useMemo(
     () =>
       ((listQuery.data ?? []) as PatrolScan[]).map((row) => ({
@@ -294,6 +315,13 @@ export default function PatrolScansPage() {
   const [openForm, setOpenForm] = React.useState(false);
   const [form, setForm] = React.useState<FormState>({ spotId: "", userId: "", patrolRunId: "", photoUrl: "", note: "" });
 
+  const [openSeed, setOpenSeed] = React.useState(false);
+  const [seedUserId, setSeedUserId] = React.useState("");
+  const [seedDates, setSeedDates] = React.useState<string[]>([]);
+  const [seedDateInput, setSeedDateInput] = React.useState("");
+  const [seedCount, setSeedCount] = React.useState(20);
+  const [seedPhotoMode, setSeedPhotoMode] = React.useState<"user" | "picsum" | "none">("user");
+
   const [successOpen, setSuccessOpen] = React.useState(false);
   const [errorOpen, setErrorOpen] = React.useState(false);
   const [successText, setSuccessText] = React.useState("Berhasil.");
@@ -306,6 +334,42 @@ export default function PatrolScansPage() {
     const defUser = effectiveFilterUserId || userRows[0]?.id || "";
     setForm({ spotId: defSpot, userId: defUser, patrolRunId: filterRunId || "", photoUrl: "", note: "" });
     setOpenForm(true);
+  };
+
+  const onClickSeed = () => {
+    if (!canManageOperational) return;
+    const defUser = effectiveFilterUserId || userRows[0]?.id || "";
+    const today = toDateOnly(new Date().toISOString());
+    setSeedUserId(defUser);
+    setSeedDates([]);
+    setSeedDateInput(today);
+    setSeedCount(20);
+    setSeedPhotoMode("user");
+    setOpenSeed(true);
+  };
+
+  const addSeedDate = (value: string) => {
+    const d = toDateOnly(value);
+    if (!d) return;
+    setSeedDates((prev) => (prev.includes(d) ? prev : [...prev, d].sort()));
+  };
+
+  const removeSeedDate = (value: string) => {
+    setSeedDates((prev) => prev.filter((d) => d !== value));
+  };
+
+  const submitSeed = async () => {
+    try {
+      const res = await seedMut.mutateAsync();
+      setOpenSeed(false);
+      setSuccessText(
+        `Seed berhasil: ${res.scansCreated} scan (${res.runsCreated} ronde) untuk ${res.username} pada ${res.dates.join(", ")}. Foto: ${res.photoSource}.`,
+      );
+      setSuccessOpen(true);
+    } catch (e) {
+      setErrorText(e instanceof Error ? e.message : "Gagal seed patrol scan.");
+      setErrorOpen(true);
+    }
   };
 
   const onOpenReport = React.useCallback(() => {
@@ -400,6 +464,11 @@ export default function PatrolScansPage() {
             <Button variant="secondary" onClick={onOpenReport} disabled={!placeId.trim()}>
               Laporan Scan
             </Button>
+            {canManageOperational ? (
+              <Button variant="secondary" onClick={onClickSeed} disabled={!placeId.trim()}>
+                🌱 Seed Banyak
+              </Button>
+            ) : null}
             {canManageOperational ? <Button onClick={onClickCreate} disabled={!placeId.trim()}>+ Create</Button> : null}
           </div>
         }
@@ -611,6 +680,97 @@ export default function PatrolScansPage() {
         }
         confirmLabel="Create"
         cancelLabel="Cancel"
+      />
+
+      <ConfirmModalMaster
+        open={openSeed}
+        onClose={() => setOpenSeed(false)}
+        onConfirm={submitSeed}
+        moduleLabel="Patrol Scans"
+        action="create"
+        title="Seed Banyak Patrol Scan"
+        message={
+          <div className="mt-4 grid gap-3">
+            <p className="text-[12px] text-slate-500">
+              Membuat banyak patrol scan sekaligus untuk satu user pada tanggal terpilih. Spot dipakai otomatis (rotasi semua spot patrol di place ini).
+            </p>
+
+            <label className="block">
+              <span className="mb-1 block text-[13px] font-medium text-slate-800">User</span>
+              <select
+                value={seedUserId}
+                onChange={(e) => setSeedUserId(e.target.value)}
+                className="w-full rounded-xl border border-white/70 bg-white/85 px-3.5 py-3 text-[13px] text-slate-900 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)] outline-none focus:border-sky-400/60 focus:bg-white focus:ring-4 focus:ring-sky-400/15"
+              >
+                <option value="">Pilih user</option>
+                {userRows.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.full_name} ({u.username})
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="block">
+              <span className="mb-1 block text-[13px] font-medium text-slate-800">Tanggal</span>
+              <div className="flex items-center gap-2">
+                <input
+                  type="date"
+                  value={seedDateInput}
+                  onChange={(e) => setSeedDateInput(e.target.value)}
+                  className="w-full rounded-xl border border-white/70 bg-white/85 px-3.5 py-3 text-[13px] text-slate-900 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)] outline-none focus:border-sky-400/60 focus:bg-white focus:ring-4 focus:ring-sky-400/15"
+                />
+                <Button variant="secondary" onClick={() => addSeedDate(seedDateInput)} disabled={!seedDateInput}>
+                  + Tambah
+                </Button>
+              </div>
+              {seedDates.length > 0 ? (
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {seedDates.map((d) => (
+                    <span key={d} className="inline-flex items-center gap-1 rounded-full bg-sky-100 px-2.5 py-1 text-[12px] font-semibold text-sky-700">
+                      {d}
+                      <button type="button" onClick={() => removeSeedDate(d)} className="text-sky-500 hover:text-rose-600" aria-label={`Hapus ${d}`}>
+                        ×
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <p className="mt-1 text-[12px] text-rose-500">Belum ada tanggal. Pilih tanggal lalu klik + Tambah.</p>
+              )}
+            </label>
+
+            <label className="block">
+              <span className="mb-1 block text-[13px] font-medium text-slate-800">Jumlah scan per tanggal</span>
+              <input
+                type="number"
+                min={1}
+                max={500}
+                value={seedCount}
+                onChange={(e) => setSeedCount(Math.max(1, Math.min(500, Number(e.target.value) || 1)))}
+                className="w-full rounded-xl border border-white/70 bg-white/85 px-3.5 py-3 text-[13px] text-slate-900 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)] outline-none focus:border-sky-400/60 focus:bg-white focus:ring-4 focus:ring-sky-400/15"
+              />
+              <p className="mt-1 text-[12px] text-slate-500">
+                Total dibuat: {seedDates.length > 0 ? seedCount * seedDates.length : 0} scan ({seedDates.length} tanggal × {seedCount}).
+              </p>
+            </label>
+
+            <label className="block">
+              <span className="mb-1 block text-[13px] font-medium text-slate-800">Foto</span>
+              <select
+                value={seedPhotoMode}
+                onChange={(e) => setSeedPhotoMode(e.target.value as "user" | "picsum" | "none")}
+                className="w-full rounded-xl border border-white/70 bg-white/85 px-3.5 py-3 text-[13px] text-slate-900 shadow-[inset_0_1px_0_rgba(255,255,255,0.9)] outline-none focus:border-sky-400/60 focus:bg-white focus:ring-4 focus:ring-sky-400/15"
+              >
+                <option value="user">Random dari foto milik user</option>
+                <option value="picsum">Random (picsum.photos)</option>
+                <option value="none">Tanpa foto</option>
+              </select>
+            </label>
+          </div>
+        }
+        confirmLabel={seedMut.isPending ? "Menyimpan..." : "Seed Sekarang"}
+        cancelLabel="Batal"
       />
 
       <SuccessModalMaster open={successOpen} onClose={() => setSuccessOpen(false)} moduleLabel="Patrol Scans" variant="create" title="Success" message={successText} />
